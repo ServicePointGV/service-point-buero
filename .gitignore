@@ -1,0 +1,10 @@
+build/
+dist/
+__pycache__/
+*.spec
+data/
+*.zip
+*.db
+Was ist im STVA 2026.xlsx
+SERVICE_POINT_Buero_V18_*/
+README_V18*.txt
