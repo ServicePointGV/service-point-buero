@@ -105,7 +105,7 @@ def db():
     c.execute('CREATE TABLE IF NOT EXISTS customers (id INTEGER PRIMARY KEY AUTOINCREMENT, created TEXT, updated TEXT, customer TEXT, first_name TEXT, mobile TEXT, address TEXT, postal TEXT, city TEXT, notes TEXT)')
     # V18.6: separate Steuerzahlerdaten fuer SEPA-/Steuerfaelle, update-sicher migriert.
     existing={r[1] for r in c.execute('PRAGMA table_info(jobs)').fetchall()}
-    for col,sqltype,default in [('taxpayer_same_holder','TEXT','Ja'),('taxpayer_first_name','TEXT',''),('taxpayer_name','TEXT',''),('taxpayer_address','TEXT',''),('taxpayer_postal','TEXT',''),('taxpayer_city','TEXT',''),('account_holder_same_taxpayer','TEXT','Ja'),('sign_count','TEXT',''),('need_gbr','TEXT','Nein'),('need_kurzzeit','TEXT','Nein'),('need_ausland_kz','TEXT','Nein'),('need_erhalt','TEXT','Nein')]:
+    for col,sqltype,default in [('taxpayer_same_holder','TEXT','Ja'),('taxpayer_first_name','TEXT',''),('taxpayer_name','TEXT',''),('taxpayer_address','TEXT',''),('taxpayer_postal','TEXT',''),('taxpayer_city','TEXT',''),('account_holder_same_taxpayer','TEXT','Ja'),('sign_count','TEXT',''),('need_gbr','TEXT','Nein'),('need_kurzzeit','TEXT','Nein'),('need_ausland_kz','TEXT','Nein'),('need_erhalt','TEXT','Nein'),('final_price','TEXT',''),('landline','TEXT','')]:
         if col not in existing:
             c.execute(f"ALTER TABLE jobs ADD COLUMN {col} {sqltype} DEFAULT '{default}'")
     existing_cust={r[1] for r in c.execute('PRAGMA table_info(customers)').fetchall()}
@@ -322,7 +322,7 @@ def move_job(jid,target):
     c.execute('UPDATE jobs SET stva_date=? WHERE id=?',(target,jid)); c.commit(); c.close(); return target
 
 def save_job(d):
-    cols=['stva_date','customer','first_name','mobile','birthdate','birthplace','birthname','address','postal','city','vehicle_type','manufacturer','plate','process','sign_size','signs','sign_count','plate_transfer','docs','missing','status','fin','zb2','evb','desired_plate','iban','bic_bank','account_holder','country','taxpayer_same_holder','taxpayer_first_name','taxpayer_name','taxpayer_address','taxpayer_postal','taxpayer_city','account_holder_same_taxpayer','need_gbr','need_kurzzeit','need_ausland_kz','need_erhalt']
+    cols=['stva_date','customer','first_name','mobile','birthdate','birthplace','birthname','address','postal','city','vehicle_type','manufacturer','plate','process','sign_size','signs','sign_count','plate_transfer','docs','missing','status','fin','zb2','evb','desired_plate','iban','bic_bank','account_holder','country','taxpayer_same_holder','taxpayer_first_name','taxpayer_name','taxpayer_address','taxpayer_postal','taxpayer_city','account_holder_same_taxpayer','need_gbr','need_kurzzeit','need_ausland_kz','need_erhalt','final_price','landline']
     c=db(); now=datetime.now().isoformat(timespec='seconds'); requested=d.get('stva_date','') or next_workday(datetime.now().date().isoformat())
     if d.get('id'):
         jid=int(d['id']); current=c.execute('SELECT stva_date FROM jobs WHERE id=?',(jid,)).fetchone()
@@ -550,6 +550,8 @@ def scan_direct(kind, side='', doc_type=''):
         return {'ok':True,'kind':'taxpayer_id','side':side,'file':dest.name,'id_type':doc_type}
     if kind=='bank': dest=p/'Bank.jpg'
     elif kind=='extra': dest=p/'Zusatzdokument.jpg'
+    elif kind=='handelsregister': dest=p/'Handelsregisterauszug.jpg'
+    elif kind=='gewerbeanmeldung': dest=p/'Gewerbeanmeldung.jpg'
     else: raise RuntimeError('Unbekannter Scanvorgang.')
     _wia_scan_to(dest)
     return {'ok':True,'kind':kind,'file':dest.name}
@@ -1109,13 +1111,32 @@ def recognize_scan(kind):
     result['duration_ms']=int((time.perf_counter()-t0)*1000)
     return result
 
-def attach_pending_scans(jid):
+def _safe_folder_name(name,first_name=''):
+    raw=f"{(name or '').strip()}_{(first_name or '').strip()}".strip('_')
+    return re.sub(r'[<>:"/\\|?*]','',raw) or 'Unbekannt'
+
+def _customer_folder(customer,first_name):
+    return DATA/'Kundenunterlagen'/_safe_folder_name(customer,first_name)
+
+CUSTOMER_DOC_LABELS={'Ausweis-Vorne.jpg':'Personalausweis Vorderseite','Ausweis-Hinten.jpg':'Personalausweis Rückseite','Ausweis-A4.jpg':'Ausweis / Reisepass (A4-Scan)','Zusatzdokument.jpg':'Meldebescheinigung / Firmenunterlage','Handelsregisterauszug.jpg':'Handelsregisterauszug','Gewerbeanmeldung.jpg':'Gewerbeanmeldung'}
+
+def customer_documents(customer,first_name):
+    d=_customer_folder(customer,first_name)
+    if not d.exists(): return []
+    return [{'file':f.name,'label':CUSTOMER_DOC_LABELS.get(f.name,f.name)} for f in sorted(d.iterdir()) if f.is_file() and f.suffix.lower() in ('.jpg','.jpeg','.png')]
+
+def attach_pending_scans(jid,customer='',first_name=''):
     pending=scan_dir(); dest=DATA/f'Auftrag_{jid:05d}'/'Scans'; dest.mkdir(parents=True,exist_ok=True)
-    mapping={'Ausweis-Vorne.jpg':'Ausweis-Vorne.jpg','Ausweis-Hinten.jpg':'Ausweis-Hinten.jpg','Ausweis-A4.jpg':'Ausweis-A4.jpg','Bank.jpg':'Bank.jpg','Zusatzdokument.jpg':'Zusatzdokument.jpg','Steuerzahler-Ausweis-Vorne.jpg':'Steuerzahler-Ausweis-Vorne.jpg','Steuerzahler-Ausweis-Hinten.jpg':'Steuerzahler-Ausweis-Hinten.jpg'}
+    mapping={'Ausweis-Vorne.jpg':'Ausweis-Vorne.jpg','Ausweis-Hinten.jpg':'Ausweis-Hinten.jpg','Ausweis-A4.jpg':'Ausweis-A4.jpg','Bank.jpg':'Bank.jpg','Zusatzdokument.jpg':'Zusatzdokument.jpg','Steuerzahler-Ausweis-Vorne.jpg':'Steuerzahler-Ausweis-Vorne.jpg','Steuerzahler-Ausweis-Hinten.jpg':'Steuerzahler-Ausweis-Hinten.jpg','Handelsregisterauszug.jpg':'Handelsregisterauszug.jpg','Gewerbeanmeldung.jpg':'Gewerbeanmeldung.jpg'}
+    persist=('Ausweis-Vorne.jpg','Ausweis-Hinten.jpg','Ausweis-A4.jpg','Zusatzdokument.jpg','Handelsregisterauszug.jpg','Gewerbeanmeldung.jpg')
+    cust_dir=_customer_folder(customer,first_name) if ((customer or '').strip() or (first_name or '').strip()) else None
     copied=[]
     for a,b in mapping.items():
         src=pending/a
-        if src.exists(): shutil.copy2(src,dest/b); copied.append(b)
+        if src.exists():
+            shutil.copy2(src,dest/b); copied.append(b)
+            if cust_dir and a in persist:
+                cust_dir.mkdir(parents=True,exist_ok=True); shutil.copy2(src,cust_dir/b)
     # Temporary scans belong to exactly one customer. Remove them after successful copy.
     clear_pending_scans()
     return copied
@@ -1405,6 +1426,12 @@ class H(BaseHTTPRequestHandler):
             elif u.path=='/api/customers': self.sendj(all_customers())
             elif u.path=='/api/customer-jobs':
                 qs=urllib.parse.parse_qs(u.query); self.sendj(customer_jobs(qs.get('name',[''])[0],qs.get('first_name',[''])[0]))
+            elif u.path=='/api/customer-documents':
+                qs=urllib.parse.parse_qs(u.query); self.sendj(customer_documents(qs.get('customer',[''])[0],qs.get('first_name',[''])[0]))
+            elif u.path=='/customer-document':
+                qs=urllib.parse.parse_qs(u.query); folder=_customer_folder(qs.get('customer',[''])[0],qs.get('first_name',[''])[0]); target=(folder/Path(qs.get('file',[''])[0]).name).resolve()
+                if folder.resolve() not in target.parents or not target.is_file(): raise RuntimeError('Dokument nicht gefunden.')
+                b=target.read_bytes(); self.send_response(200); self.send_header('Content-Type','image/jpeg'); self.send_header('Content-Length',len(b)); self.end_headers(); self.wfile.write(b)
             elif u.path=='/api/radio-nowplaying':
                 qs=urllib.parse.parse_qs(u.query); self.sendj({'title':radio_now_playing(qs.get('station',[''])[0])})
             elif u.path=='/api/import': self.sendj({'count':import_xlsx(BASE/'Was ist im STVA 2026.xlsx')})
@@ -1442,7 +1469,7 @@ class H(BaseHTTPRequestHandler):
             elif self.path=='/api/lauf-options':
                 jid=int(d.get('id',0)); save_lauf_options(jid,d.get('data') or {}); self.sendj({'ok':True})
             elif self.path=='/api/save':
-                jid,actual=save_job(d); attach_pending_scans(jid); self.sendj({'id':jid,'stva_date':actual})
+                jid,actual=save_job(d); attach_pending_scans(jid,d.get('customer',''),d.get('first_name','')); self.sendj({'id':jid,'stva_date':actual})
             elif self.path=='/api/fill-buffers': self.sendj(fill_buffers(d.get('date') or datetime.now().date().isoformat()))
             elif self.path=='/api/move': self.sendj({'ok':True,'stva_date':move_job(int(d.get('id',0)),d.get('date',''))})
             elif self.path=='/api/job-delete': self.sendj({'ok':bool(delete_job(int(d.get('id',0))))})
