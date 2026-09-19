@@ -1,5 +1,6 @@
 build/
 dist/
+installer_output/
 __pycache__/
 *.spec
 data/
