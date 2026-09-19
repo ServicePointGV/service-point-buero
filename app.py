@@ -361,6 +361,13 @@ def remove_from_today(jid):
     cur=c.execute('UPDATE jobs SET stva_date=? WHERE id=?',('',jid))
     c.commit(); changed=cur.rowcount; c.close(); return changed
 
+def delete_job(jid):
+    c=db()
+    c.execute('DELETE FROM intake_checklists WHERE job_id=?',(jid,))
+    c.execute('DELETE FROM laufzettel_options WHERE job_id=?',(jid,))
+    cur=c.execute('DELETE FROM jobs WHERE id=?',(jid,))
+    c.commit(); changed=cur.rowcount; c.close(); return changed
+
 def excel_col(ref):
     letters=re.match(r'[A-Z]+',ref).group(); n=0
     for ch in letters:n=n*26+ord(ch)-64
@@ -1438,6 +1445,7 @@ class H(BaseHTTPRequestHandler):
                 jid,actual=save_job(d); attach_pending_scans(jid); self.sendj({'id':jid,'stva_date':actual})
             elif self.path=='/api/fill-buffers': self.sendj(fill_buffers(d.get('date') or datetime.now().date().isoformat()))
             elif self.path=='/api/move': self.sendj({'ok':True,'stva_date':move_job(int(d.get('id',0)),d.get('date',''))})
+            elif self.path=='/api/job-delete': self.sendj({'ok':bool(delete_job(int(d.get('id',0))))})
             elif self.path=='/api/remove-today':
                 jid=int(d.get('id',0)); changed=remove_from_today(jid)
                 if not changed: self.sendj({'error':'Auftrag nicht gefunden'},404)

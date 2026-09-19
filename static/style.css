@@ -33,6 +33,8 @@ label.wide{grid-column:1/-1}
 .checkline input{width:auto}
 
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:36px;padding:0 14px;border-radius:var(--radius);border:1px solid var(--border-strong);background:var(--panel);color:var(--text);font-size:13px;font-weight:600;cursor:pointer}
+.btn.danger{background:var(--danger-bg);border-color:var(--danger);color:var(--danger)}
+.btn.danger:hover{background:var(--danger);color:#fff}
 .btn:hover{background:var(--panel-2);border-color:var(--text-muted)}
 .btn:active{transform:scale(.98)}
 .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
@@ -163,12 +165,17 @@ table{width:100%;border-collapse:collapse;font-size:12.5px}
 .portalGrid table th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:var(--text-muted);padding:8px 10px;border-bottom:1px solid var(--border)}
 .matrixTodayTable th,#all table th,#customerTable table th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.03em;color:var(--text-muted);padding:8px 10px;border:1px solid var(--border)}
 .matrixTodayTable td,#all table td,#customerTable table td{padding:8px 10px;border:1px solid var(--border);color:var(--text);vertical-align:middle}
+.matrixTodayTable td,#all table td{text-align:center}
 .matrixTodayTable tr:hover td,#all table tbody tr:hover td,#customerTable table tbody tr:hover td{background:var(--panel-2)}
 .matrixTodayTable tr.matrixFree td,#all tr.matrixFree td{color:var(--text-muted)}
 .matrixTodayTable tr.matrixBuffer td,#all tr.buffer td{background:var(--panel-2)}
+.matrixTodayTable tr[data-status="Beim StVA"] td{background:var(--accent-weak,#e8f1fc)}
+.matrixTodayTable tr[data-status="Abgeholt"] td{background:var(--success-bg,#e3f6ea)}
+.matrixTodayTable tr[data-status="Rückfrage"] td{background:var(--danger-bg,#fbe4e4)}
 .slotCell{color:var(--text-muted);font-variant-numeric:tabular-nums}
 .plateCell{font-weight:700;letter-spacing:.02em}
 .matrixTodayTable .dashCell,#customerTable table .dashCell{width:100%;border:1px solid transparent;background:transparent;font:inherit;color:inherit;padding:3px 5px;border-radius:4px;box-sizing:border-box}
+.matrixTodayTable .dashCell{text-align:center}
 .matrixTodayTable .dashCell:hover,#customerTable table .dashCell:hover{border-color:var(--border)}
 .matrixTodayTable .dashCell:focus,#customerTable table .dashCell:focus{outline:none;border-color:var(--accent);background:var(--accent-weak)}
 .matrixTodayTable select.dashCell,#customerTable table select.dashCell{cursor:pointer}
