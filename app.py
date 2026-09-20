@@ -3,7 +3,7 @@ from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from datetime import datetime, timedelta, time as dtime
 from pathlib import Path
 
-VERSION='1.0.1'
+VERSION='1.1.0'
 BASE=Path(sys.executable).resolve().parent if getattr(sys,'frozen',False) else Path(__file__).resolve().parent
 # Produktivdaten liegen unter Windows ausserhalb des Versionsordners. So bleiben Auftraege,
 # Mitarbeiter, Notizen und Scans bei einem Update auf einen neuen ZIP-Ordner erhalten.
