@@ -1,6 +1,6 @@
 import json, os, sqlite3, sys, webbrowser, threading, urllib.parse, urllib.request, ssl, time, zipfile, re, subprocess, platform, shutil
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time as dtime
 from pathlib import Path
 
 VERSION='1.0.1'
@@ -107,7 +107,7 @@ def db():
     c.execute('CREATE TABLE IF NOT EXISTS customers (id INTEGER PRIMARY KEY AUTOINCREMENT, created TEXT, updated TEXT, customer TEXT, first_name TEXT, mobile TEXT, address TEXT, postal TEXT, city TEXT, notes TEXT)')
     # V18.6: separate Steuerzahlerdaten fuer SEPA-/Steuerfaelle, update-sicher migriert.
     existing={r[1] for r in c.execute('PRAGMA table_info(jobs)').fetchall()}
-    for col,sqltype,default in [('taxpayer_same_holder','TEXT','Ja'),('taxpayer_first_name','TEXT',''),('taxpayer_name','TEXT',''),('taxpayer_address','TEXT',''),('taxpayer_postal','TEXT',''),('taxpayer_city','TEXT',''),('account_holder_same_taxpayer','TEXT','Ja'),('sign_count','TEXT',''),('need_gbr','TEXT','Nein'),('need_kurzzeit','TEXT','Nein'),('need_ausland_kz','TEXT','Nein'),('need_erhalt','TEXT','Nein'),('final_price','TEXT',''),('landline','TEXT',''),('pickup_notified_at','TEXT','')]:
+    for col,sqltype,default in [('taxpayer_same_holder','TEXT','Ja'),('taxpayer_first_name','TEXT',''),('taxpayer_name','TEXT',''),('taxpayer_address','TEXT',''),('taxpayer_postal','TEXT',''),('taxpayer_city','TEXT',''),('account_holder_same_taxpayer','TEXT','Ja'),('sign_count','TEXT',''),('need_gbr','TEXT','Nein'),('need_kurzzeit','TEXT','Nein'),('need_ausland_kz','TEXT','Nein'),('need_erhalt','TEXT','Nein'),('final_price','TEXT',''),('landline','TEXT',''),('pickup_notified_at','TEXT',''),('fee_service','TEXT',''),('fee_signs','TEXT',''),('fee_stva','TEXT',''),('customer_type','TEXT','Privat'),('invoiced_at','TEXT','')]:
         if col not in existing:
             c.execute(f"ALTER TABLE jobs ADD COLUMN {col} {sqltype} DEFAULT '{default}'")
     existing_cust={r[1] for r in c.execute('PRAGMA table_info(customers)').fetchall()}
@@ -115,8 +115,103 @@ def db():
         c.execute("ALTER TABLE customers ADD COLUMN customer_type TEXT DEFAULT ''")
     c.commit(); return c
 
+AUTO_STATUS_ORDER=['Offen','Beim StVA','Im Büro','Abholbereit']
+
+def _auto_status_rank(s):
+    s=(s or '').strip()
+    if s=='': return 0
+    try: return AUTO_STATUS_ORDER.index(s)
+    except ValueError: return None
+
+def apply_auto_statuses(c):
+    """Rueckt den Status automatisch anhand von Uhrzeit/StVA-Tag sowie Rechnung+Kundenbenachrichtigung vor.
+    Faengt nur Auftraege ab, deren Status noch im automatischen Ablauf steht (Offen/Beim StVA/Im Buero/Abholbereit);
+    manuell gesetzte Status wie Rueckfrage, Abgeholt, Erledigt, Wartet auf Abholung, VORGEPLANT etc. bleiben unangetastet."""
+    now=datetime.now()
+    for r in c.execute("SELECT id,status,stva_date,pickup_notified_at,invoiced_at FROM jobs WHERE stva_date IS NOT NULL AND stva_date<>''").fetchall():
+        cur_rank=_auto_status_rank(r['status'])
+        if cur_rank is None: continue
+        try: stva_date=datetime.strptime(r['stva_date'],'%Y-%m-%d').date()
+        except Exception: continue
+        target='Offen'
+        if now>=datetime.combine(stva_date,dtime(9,0)):
+            target='Beim StVA'
+            buero_day=datetime.strptime(next_workday(r['stva_date']),'%Y-%m-%d').date()
+            if now>=datetime.combine(buero_day,dtime(9,0)):
+                target='Im Büro'
+        if r['invoiced_at'] and r['pickup_notified_at']:
+            target='Abholbereit'
+        target_rank=AUTO_STATUS_ORDER.index(target)
+        if target_rank>cur_rank:
+            c.execute('UPDATE jobs SET status=? WHERE id=?',(target,r['id']))
+    c.commit()
+
 def rows():
-    c=db(); r=[dict(x) for x in c.execute('SELECT * FROM jobs ORDER BY COALESCE(stva_date,created) DESC,id DESC')]; c.close(); return r
+    c=db(); apply_auto_statuses(c); r=[dict(x) for x in c.execute('SELECT * FROM jobs ORDER BY COALESCE(stva_date,created) DESC,id DESC')]; c.close(); return r
+
+def get_job(jid):
+    c=db(); r=c.execute('SELECT * FROM jobs WHERE id=?',(jid,)).fetchone(); c.close()
+    return dict(r) if r else None
+
+def billbee_create_invoice(jid):
+    """Legt in Billbee eine Bestellung an und erstellt daraus eine Rechnung.
+    HINWEIS: Die genaue Feldstruktur basiert auf der oeffentlichen Billbee-API-Doku
+    (https://app.billbee.io/swagger/ui/index) ohne Zugriff auf ein echtes Konto zum
+    Testen. Beim ersten echten Lauf mit gueltigen Zugangsdaten muss das Feldmapping
+    ggf. anhand der tatsaechlichen Fehlermeldung von Billbee nachjustiert werden."""
+    job=get_job(jid)
+    if not job: raise RuntimeError('Auftrag nicht gefunden.')
+    s=get_app_settings()
+    api_key=s.get('billbee_api_key','').strip(); username=s.get('billbee_username','').strip(); password=s.get('billbee_api_password','').strip()
+    if not (api_key and username and password):
+        raise RuntimeError('Billbee ist noch nicht eingerichtet. Bitte API-Key, Benutzername und API-Passwort unter Einstellungen -> Betrieb eintragen.')
+    import base64
+    auth=base64.b64encode(f'{username}:{password}'.encode('utf-8')).decode('ascii')
+    headers={'X-Billbee-Api-Key':api_key,'Authorization':f'Basic {auth}','Content-Type':'application/json','Accept':'application/json'}
+    name_last=job.get('customer','') or ''; name_first=job.get('first_name','') or ''
+    def to_num(v):
+        try: return float(str(v or '0').replace(',','.').strip() or 0)
+        except ValueError: return 0.0
+    fee_service=to_num(job.get('fee_service')); fee_signs=to_num(job.get('fee_signs')); fee_stva=to_num(job.get('fee_stva'))
+    items=[]
+    if fee_service: items.append(('Servicegebühr','SERVICE',fee_service))
+    if fee_signs: items.append(('Kennzeichen / Schilder','SCHILDER',fee_signs))
+    if fee_stva: items.append(('StVA-Gebühren','STVA',fee_stva))
+    if not items:
+        # Fallback fuer Auftraege, die noch ueber das alte einzelne Endpreis-Feld liefen.
+        legacy_price=to_num(job.get('final_price'))
+        items.append((job.get('process') or 'Zulassungsdienstleistung','ZULASSUNG',legacy_price))
+    price=round(sum(x[2] for x in items),2)
+    now=datetime.now()
+    order_payload={
+        'State':1,
+        'PaymentMethod':1,
+        'ShippingCost':0,
+        'InvoiceDate':now.strftime('%Y-%m-%dT%H:%M:%S'),
+        'CreatedAt':now.strftime('%Y-%m-%dT%H:%M:%S'),
+        'InvoiceAddress':{'FirstName':name_first,'LastName':name_last,'Street':job.get('address','') or '','Zip':job.get('postal','') or '','City':job.get('city','') or '','Country':'DE'},
+        'OrderItems':[{'Quantity':1,'TotalPrice':amount,'TaxAmount':0,'TaxIndex':0,'Product':{'Title':title,'SKU':sku}} for title,sku,amount in items],
+        'PayedAmount':price,
+        'TotalCost':price,
+    }
+    req=urllib.request.Request('https://app.billbee.io/api/v1/orders',data=json.dumps(order_payload).encode('utf-8'),headers=headers,method='POST')
+    try:
+        with urllib.request.urlopen(req,timeout=15) as r: result=json.loads(r.read().decode('utf-8'))
+    except urllib.error.HTTPError as e:
+        raise RuntimeError('Billbee hat die Bestellung abgelehnt (HTTP '+str(e.code)+'): '+e.read().decode('utf-8','ignore'))
+    except Exception as e:
+        raise RuntimeError('Billbee ist nicht erreichbar: '+str(e))
+    order_id=(result.get('Data') or {}).get('ID') or result.get('ID')
+    if not order_id: raise RuntimeError('Billbee hat keine Bestell-ID zurückgegeben: '+json.dumps(result,ensure_ascii=False)[:300])
+    inv_req=urllib.request.Request(f'https://app.billbee.io/api/v1/orders/CreateInvoice/{order_id}?includeInvoicePdf=true',headers=headers,method='POST')
+    try:
+        with urllib.request.urlopen(inv_req,timeout=20) as r: inv_result=json.loads(r.read().decode('utf-8'))
+    except urllib.error.HTTPError as e:
+        raise RuntimeError('Bestellung #'+str(order_id)+' wurde angelegt, aber die Rechnung konnte nicht erstellt werden (HTTP '+str(e.code)+'): '+e.read().decode('utf-8','ignore'))
+    except Exception as e:
+        raise RuntimeError('Bestellung #'+str(order_id)+' wurde angelegt, aber Rechnung ist fehlgeschlagen: '+str(e))
+    dbc=db(); dbc.execute('UPDATE jobs SET invoiced_at=? WHERE id=?',(datetime.now().isoformat(timespec='seconds'),jid)); dbc.commit(); apply_auto_statuses(dbc); dbc.close()
+    return {'ok':True,'billbee_order_id':order_id,'result':inv_result}
 
 def export_jobs_csv():
     import csv,io
@@ -212,6 +307,25 @@ def restore_deleted_customer(cid):
     c.execute(f"INSERT OR REPLACE INTO customers ({','.join(cols)}) VALUES ({','.join('?' for _ in cols)})",[d[k] for k in cols])
     c.execute('DELETE FROM deleted_customers WHERE id=?',(cid,)); c.commit(); c.close(); return cid
 
+def _document_folders():
+    """Alle Ordner mit gescannten Dokumenten: dauerhafte Kundenunterlagen + Auftragsordner mit Scans/PDFs."""
+    out=[]
+    kunden=DATA/'Kundenunterlagen'
+    if kunden.exists(): out.append(kunden)
+    for p in DATA.glob('Auftrag_*'):
+        if p.is_dir(): out.append(p)
+    return out
+
+def backup_documents_zip(target):
+    """Sichert alle gescannten Dokumente (Ausweise, Firmenunterlagen, Auftragsordner) in ein ZIP."""
+    folders=_document_folders()
+    if not folders: return False
+    with zipfile.ZipFile(target,'w',zipfile.ZIP_DEFLATED) as z:
+        for base in folders:
+            for f in base.rglob('*'):
+                if f.is_file(): z.write(f,f.relative_to(DATA))
+    return True
+
 def backup_db_daily():
     """Create one local SQLite backup per day and retain the latest 14 backups."""
     try:
@@ -227,17 +341,25 @@ def backup_db_daily():
         for old in backups[14:]:
             try: old.unlink()
             except Exception: pass
+        ztarget=folder/f"dokumente_{datetime.now().date().isoformat()}.zip"
+        if not ztarget.exists(): backup_documents_zip(ztarget)
+        zips=sorted(folder.glob('dokumente_*.zip'),key=lambda x:x.stat().st_mtime,reverse=True)
+        for old in zips[14:]:
+            try: old.unlink()
+            except Exception: pass
     except Exception:
         # Eine fehlgeschlagene Sicherung darf den Bueroablauf nicht blockieren.
         pass
 
 def backup_db_now():
-    """Create a timestamped manual SQLite backup and return its filename."""
+    """Create a timestamped manual SQLite backup (+ Dokumente-ZIP) and return its filename."""
     folder=DATA/'backups'; folder.mkdir(parents=True,exist_ok=True)
     target=folder/f"auftraege_manuell_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.db"
     src=sqlite3.connect(DB); dst=sqlite3.connect(target)
     try: src.backup(dst)
     finally: dst.close(); src.close()
+    try: backup_documents_zip(folder/f"dokumente_manuell_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.zip")
+    except Exception: pass
     return target.name
 
 def list_backups():
@@ -245,6 +367,14 @@ def list_backups():
     if not folder.exists(): return []
     files=sorted(folder.glob('auftraege_*.db'),key=lambda p:p.stat().st_mtime,reverse=True)
     return [{'name':f.name,'size':f.stat().st_size,'mtime':datetime.fromtimestamp(f.stat().st_mtime).isoformat(timespec='seconds')} for f in files]
+
+def latest_document_backup():
+    folder=DATA/'backups'
+    if not folder.exists(): return None
+    files=sorted(folder.glob('dokumente_*.zip'),key=lambda p:p.stat().st_mtime,reverse=True)
+    if not files: return None
+    f=files[0]
+    return {'name':f.name,'size':f.stat().st_size,'mtime':datetime.fromtimestamp(f.stat().st_mtime).isoformat(timespec='seconds')}
 
 def restore_backup(name):
     folder=DATA/'backups'; src=folder/Path(name or '').name
@@ -375,7 +505,7 @@ def move_job(jid,target):
     c.execute('UPDATE jobs SET stva_date=? WHERE id=?',(target,jid)); c.commit(); c.close(); return target
 
 def save_job(d):
-    cols=['stva_date','customer','first_name','mobile','birthdate','birthplace','birthname','address','postal','city','vehicle_type','manufacturer','plate','process','sign_size','signs','sign_count','plate_transfer','docs','missing','status','fin','zb2','evb','desired_plate','iban','bic_bank','account_holder','country','taxpayer_same_holder','taxpayer_first_name','taxpayer_name','taxpayer_address','taxpayer_postal','taxpayer_city','account_holder_same_taxpayer','need_gbr','need_kurzzeit','need_ausland_kz','need_erhalt','final_price','landline','pickup_notified_at']
+    cols=['stva_date','customer','first_name','mobile','birthdate','birthplace','birthname','address','postal','city','vehicle_type','manufacturer','plate','process','sign_size','signs','sign_count','plate_transfer','docs','missing','status','fin','zb2','evb','desired_plate','iban','bic_bank','account_holder','country','taxpayer_same_holder','taxpayer_first_name','taxpayer_name','taxpayer_address','taxpayer_postal','taxpayer_city','account_holder_same_taxpayer','need_gbr','need_kurzzeit','need_ausland_kz','need_erhalt','final_price','landline','pickup_notified_at','fee_service','fee_signs','fee_stva','customer_type']
     c=db(); now=datetime.now().isoformat(timespec='seconds'); requested=d.get('stva_date','') or next_workday(datetime.now().date().isoformat())
     if d.get('id'):
         jid=int(d['id']); current=c.execute('SELECT stva_date FROM jobs WHERE id=?',(jid,)).fetchone()
@@ -627,7 +757,7 @@ DEFAULT_PICKUP_MESSAGE=("Guten Tag,\n\nIhre Unterlagen liegen bei uns Fertig und
     "Die Gesamtkosten belaufen sich auf {price} €.\n\nUnsere Öffnungszeiten sind:\n\n"
     "Montag und Mittwochs von 07:30 bis 16:30\nDienstags und Donnerstags von 07:30 bis 15:30\nFreitags von 07:30 bis 13:00\n\n"
     "Mit freundlichen Grüßen \nZulassungsservice Grevenbroich")
-DEFAULT_APP_SETTINGS={'regular_slots':8,'buffer_slots':2,'pickup_message':DEFAULT_PICKUP_MESSAGE,'closed_dates':{},'enabled_radios':['1live','jamfm','bollerwagen','bigfm','swr3','wdr4','bob','sunshine']}
+DEFAULT_APP_SETTINGS={'regular_slots':8,'buffer_slots':2,'pickup_message':DEFAULT_PICKUP_MESSAGE,'closed_dates':{},'enabled_radios':['1live','jamfm','bollerwagen','bigfm','swr3','wdr4','bob','sunshine'],'billbee_api_key':'','billbee_username':'','billbee_api_password':''}
 
 def _app_settings_file():
     return DATA/'app_settings.json'
@@ -650,6 +780,8 @@ def save_app_settings(patch):
         cur['closed_dates']={str(k):str(v) for k,v in patch['closed_dates'].items() if re.match(r'^\d{4}-\d{2}-\d{2}$',str(k))}
     if 'enabled_radios' in patch and isinstance(patch['enabled_radios'],list):
         cur['enabled_radios']=[str(x) for x in patch['enabled_radios'] if str(x) in DEFAULT_APP_SETTINGS['enabled_radios']]
+    for k in ('billbee_api_key','billbee_username','billbee_api_password'):
+        if k in patch: cur[k]=str(patch[k] or '').strip()
     _app_settings_file().write_text(json.dumps(cur,ensure_ascii=False),encoding='utf-8')
     return cur
 
@@ -1474,6 +1606,7 @@ class H(BaseHTTPRequestHandler):
             elif u.path=='/api/calibration': self.sendj(get_scanner_calibration())
             elif u.path=='/api/app-settings': self.sendj(get_app_settings())
             elif u.path=='/api/backups': self.sendj(list_backups())
+            elif u.path=='/api/document-backup-status': self.sendj({'latest':latest_document_backup()})
             elif u.path=='/api/update-check': self.sendj(find_update())
             elif u.path=='/scan-preview':
                 name=Path(urllib.parse.parse_qs(u.query).get('file',[''])[0]).name
@@ -1551,6 +1684,8 @@ class H(BaseHTTPRequestHandler):
                 self.sendj({'ok':True,'id':restore_deleted_job(int(d.get('id')))})
             elif self.path=='/api/customer-restore':
                 self.sendj({'ok':True,'id':restore_deleted_customer(int(d.get('id')))})
+            elif self.path=='/api/billbee-invoice':
+                self.sendj(billbee_create_invoice(int(d.get('id',0))))
             elif self.path=='/api/calibration':
                 self.sendj(save_scanner_calibration(d.get('box')) if d.get('box') else reset_scanner_calibration())
             elif self.path=='/api/app-settings':
