@@ -94,6 +94,8 @@ label.wide{grid-column:1/-1}
 .navIcon{width:23px;text-align:center;font-size:17px;flex-shrink:0;color:var(--text-muted)}
 .sideNav button.active .navIcon{color:var(--accent-strong)}
 img.navIcon{width:23px;height:23px;object-fit:contain;border-radius:6px;background:#fff;border:1px solid var(--border);padding:2px}
+.navIcon.badge{width:23px;height:23px;display:inline-flex;align-items:center;justify-content:center;border-radius:6px;background:#fff;border:1px solid var(--border);box-sizing:border-box}
+.sideNav button.active .navIcon.badge{border-color:var(--accent)}
 .navBottom{margin-top:auto;padding-top:14px;border-top:1px solid var(--border)}
 .sideExtra{width:100%}
 
@@ -336,10 +338,12 @@ img.portalIcon,img.helpCatIcon{object-fit:contain;padding:6px;background:#fff;bo
 .calibImageWrap{position:relative;margin-top:12px;max-width:100%;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;cursor:crosshair;line-height:0}
 .calibImageWrap img{max-width:100%;display:block;user-select:none;pointer-events:none}
 .calibBox{position:absolute;border:2px solid var(--accent);background:rgba(29,111,209,.18);display:none;pointer-events:none}
+.themePresets{display:grid;grid-template-columns:repeat(8,1fr);gap:6px 7px;margin-bottom:10px}
+.themePresetBtn{display:flex;flex-direction:column;align-items:center;gap:4px;min-width:0;padding:5px 2px;border:1px solid var(--border-strong);border-radius:7px;background:var(--panel);cursor:pointer;font-size:9.5px;line-height:1.2;font-weight:600;color:var(--text-2);white-space:normal;word-break:break-word}
+.themePresetBtn:hover{border-color:var(--accent);color:var(--accent-strong)}
+.themePresetSwatch{width:100%;height:16px;border-radius:5px;background:linear-gradient(135deg,var(--sw1) 50%,var(--sw2) 50%)}
 .themeFields{display:grid;grid-template-columns:1fr 1fr;gap:8px 12px;margin:10px 0}
 .themeFields label{flex-direction:row;align-items:center;gap:6px;font-weight:400;flex-wrap:wrap}
-.themeHex{width:76px;font:12px/1.4 ui-monospace,monospace;padding:3px 6px;border:1px solid var(--border);border-radius:6px;background:var(--panel);color:var(--text);text-transform:uppercase}
-.heroUpload{margin:12px 0}
 
 .noteGrid{display:grid;grid-template-columns:280px minmax(0,1fr);grid-template-rows:minmax(0,1fr);gap:16px;flex:1;min-height:0}
 .noteList,.noteEditor{display:flex;flex-direction:column;min-height:0}
