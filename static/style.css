@@ -32,7 +32,7 @@ label.wide{grid-column:1/-1}
 .checkline{flex-direction:row!important;align-items:center;gap:8px!important;font-weight:400}
 .checkline input{width:auto}
 
-.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:36px;padding:0 14px;border-radius:var(--radius);border:1px solid var(--border-strong);background:var(--panel);color:var(--text);font-size:13px;font-weight:600;cursor:pointer}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:36px;padding:0 14px;border-radius:var(--radius);border:1px solid var(--border-strong);background:var(--panel);color:var(--text);font-size:13px;font-weight:600;cursor:pointer;text-decoration:none}
 .btn.danger{background:var(--danger-bg);border-color:var(--danger);color:var(--danger)}
 .btn.danger:hover{background:var(--danger);color:#fff}
 .btn:hover{background:var(--panel-2);border-color:var(--text-muted)}
@@ -169,6 +169,7 @@ table{width:100%;border-collapse:collapse;font-size:12.5px}
 .matrixTodayTable td,#all table td{text-align:center}
 .matrixTodayTable tr:hover td,#all table tbody tr:hover td,#customerTable table tbody tr:hover td{background:var(--panel-2)}
 .matrixTodayTable tr.matrixFree td,#all tr.matrixFree td{color:var(--text-muted)}
+.matrixTodayTable tr[data-kz="1"] td.slotCell{border-left:4px solid #d68910;padding-left:6px}
 .matrixTodayTable tr.matrixBuffer td,#all tr.buffer td{background:var(--panel-2)}
 .matrixTodayTable tr[data-status="Beim StVA"] td{background:var(--accent-weak,#e8f1fc)}
 .matrixTodayTable tr[data-status="Abgeholt"] td{background:var(--success-bg,#e3f6ea)}
@@ -306,6 +307,12 @@ img.portalIcon,img.helpCatIcon{object-fit:contain;padding:6px;background:#fff;bo
 .checks label{flex-direction:row;align-items:center;gap:8px;font-weight:400;color:var(--text)}
 .checks input{width:auto}
 
+.settingsTabs{display:flex;gap:8px;margin-bottom:14px;border-bottom:1px solid var(--border);padding-bottom:0}
+.settingsTab{background:none;border:none;border-bottom:2px solid transparent;padding:8px 4px;margin-bottom:-1px;font-size:14px;font-weight:600;color:var(--text-muted);cursor:pointer}
+.settingsTab:hover{color:var(--text)}
+.settingsTab.active{color:var(--accent-strong);border-bottom-color:var(--accent)}
+.settingsCategories{display:block}
+.settingsCategory .settingsGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
 .settingsGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));align-items:start;gap:14px}
 .settingsCard{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius-lg);padding:16px;box-shadow:var(--shadow-card)}
 .backupList{margin-top:14px;display:flex;flex-direction:column;gap:6px}
@@ -315,10 +322,9 @@ img.portalIcon,img.helpCatIcon{object-fit:contain;padding:6px;background:#fff;bo
 .calibImageWrap{position:relative;margin-top:12px;max-width:100%;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;cursor:crosshair;line-height:0}
 .calibImageWrap img{max-width:100%;display:block;user-select:none;pointer-events:none}
 .calibBox{position:absolute;border:2px solid var(--accent);background:rgba(29,111,209,.18);display:none;pointer-events:none}
-.themeFields{display:flex;flex-wrap:wrap;gap:12px;margin:10px 0}
-.themeFields label{flex-direction:row;align-items:center;gap:6px;font-weight:400}
-.themePreview{display:flex;align-items:center;gap:8px;margin:10px 0;font-size:13px}
-.themeDot{width:16px;height:16px;border-radius:50%;background:var(--accent);display:inline-block}
+.themeFields{display:grid;grid-template-columns:1fr 1fr;gap:8px 12px;margin:10px 0}
+.themeFields label{flex-direction:row;align-items:center;gap:6px;font-weight:400;flex-wrap:wrap}
+.themeHex{width:76px;font:12px/1.4 ui-monospace,monospace;padding:3px 6px;border:1px solid var(--border);border-radius:6px;background:var(--panel);color:var(--text);text-transform:uppercase}
 .heroUpload{margin:12px 0}
 
 .noteGrid{display:grid;grid-template-columns:280px minmax(0,1fr);grid-template-rows:minmax(0,1fr);gap:16px;flex:1;min-height:0}

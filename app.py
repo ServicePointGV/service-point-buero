@@ -102,10 +102,12 @@ def db():
     c.execute('CREATE TABLE IF NOT EXISTS laufzettel_options (job_id INTEGER PRIMARY KEY, data TEXT NOT NULL)')
     c.execute('CREATE TABLE IF NOT EXISTS intake_checklists (job_id INTEGER PRIMARY KEY, data TEXT NOT NULL)')
     c.execute('CREATE TABLE IF NOT EXISTS personal_notes (id INTEGER PRIMARY KEY AUTOINCREMENT, employee_id INTEGER NOT NULL, created TEXT NOT NULL, updated TEXT NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL, done INTEGER NOT NULL DEFAULT 0)')
+    c.execute('CREATE TABLE IF NOT EXISTS deleted_jobs (id INTEGER PRIMARY KEY, deleted_at TEXT, data TEXT)')
+    c.execute('CREATE TABLE IF NOT EXISTS deleted_customers (id INTEGER PRIMARY KEY, deleted_at TEXT, data TEXT)')
     c.execute('CREATE TABLE IF NOT EXISTS customers (id INTEGER PRIMARY KEY AUTOINCREMENT, created TEXT, updated TEXT, customer TEXT, first_name TEXT, mobile TEXT, address TEXT, postal TEXT, city TEXT, notes TEXT)')
     # V18.6: separate Steuerzahlerdaten fuer SEPA-/Steuerfaelle, update-sicher migriert.
     existing={r[1] for r in c.execute('PRAGMA table_info(jobs)').fetchall()}
-    for col,sqltype,default in [('taxpayer_same_holder','TEXT','Ja'),('taxpayer_first_name','TEXT',''),('taxpayer_name','TEXT',''),('taxpayer_address','TEXT',''),('taxpayer_postal','TEXT',''),('taxpayer_city','TEXT',''),('account_holder_same_taxpayer','TEXT','Ja'),('sign_count','TEXT',''),('need_gbr','TEXT','Nein'),('need_kurzzeit','TEXT','Nein'),('need_ausland_kz','TEXT','Nein'),('need_erhalt','TEXT','Nein'),('final_price','TEXT',''),('landline','TEXT','')]:
+    for col,sqltype,default in [('taxpayer_same_holder','TEXT','Ja'),('taxpayer_first_name','TEXT',''),('taxpayer_name','TEXT',''),('taxpayer_address','TEXT',''),('taxpayer_postal','TEXT',''),('taxpayer_city','TEXT',''),('account_holder_same_taxpayer','TEXT','Ja'),('sign_count','TEXT',''),('need_gbr','TEXT','Nein'),('need_kurzzeit','TEXT','Nein'),('need_ausland_kz','TEXT','Nein'),('need_erhalt','TEXT','Nein'),('final_price','TEXT',''),('landline','TEXT',''),('pickup_notified_at','TEXT','')]:
         if col not in existing:
             c.execute(f"ALTER TABLE jobs ADD COLUMN {col} {sqltype} DEFAULT '{default}'")
     existing_cust={r[1] for r in c.execute('PRAGMA table_info(customers)').fetchall()}
@@ -115,6 +117,20 @@ def db():
 
 def rows():
     c=db(); r=[dict(x) for x in c.execute('SELECT * FROM jobs ORDER BY COALESCE(stva_date,created) DESC,id DESC')]; c.close(); return r
+
+def export_jobs_csv():
+    import csv,io
+    cols=['id','stva_date','status','customer','first_name','mobile','landline','address','postal','city','vehicle_type','manufacturer','plate','desired_plate','process','plate_transfer','sign_size','signs','docs','missing','final_price','created']
+    buf=io.StringIO(); w=csv.writer(buf,delimiter=';'); w.writerow(cols)
+    for j in rows(): w.writerow([j.get(k,'') for k in cols])
+    return buf.getvalue().encode('utf-8-sig')
+
+def export_customers_csv():
+    import csv,io
+    cols=['customer','first_name','customer_type','mobile','address','postal','city','notes','job_count','last_date']
+    buf=io.StringIO(); w=csv.writer(buf,delimiter=';'); w.writerow(cols)
+    for c in all_customers(): w.writerow([c.get(k,'') for k in cols])
+    return buf.getvalue().encode('utf-8-sig')
 
 def _cust_key(name,first_name=''):
     return (name or '').strip().lower()+'|'+(first_name or '').strip().lower()
@@ -159,7 +175,42 @@ def save_customer(d):
     c.commit(); c.close(); return cid
 
 def delete_customer(cid):
-    c=db(); c.execute('DELETE FROM customers WHERE id=?',(cid,)); c.commit(); c.close()
+    c=db()
+    row=c.execute('SELECT * FROM customers WHERE id=?',(cid,)).fetchone()
+    if row: c.execute('INSERT OR REPLACE INTO deleted_customers(id,deleted_at,data) VALUES(?,?,?)',(cid,datetime.now().isoformat(timespec='seconds'),json.dumps(dict(row),ensure_ascii=False)))
+    c.execute('DELETE FROM customers WHERE id=?',(cid,)); c.commit(); c.close()
+
+def _prune_trash(c,table):
+    cutoff=(datetime.now()-timedelta(days=7)).isoformat(timespec='seconds')
+    c.execute(f'DELETE FROM {table} WHERE deleted_at<?',(cutoff,))
+
+def list_deleted_jobs():
+    c=db(); _prune_trash(c,'deleted_jobs'); c.commit()
+    out=[]
+    for r in c.execute('SELECT id,deleted_at,data FROM deleted_jobs ORDER BY deleted_at DESC'):
+        d=json.loads(r['data']); out.append({'id':r['id'],'deleted_at':r['deleted_at'],'customer':d.get('customer',''),'first_name':d.get('first_name',''),'stva_date':d.get('stva_date','')})
+    c.close(); return out
+
+def restore_deleted_job(jid):
+    c=db(); row=c.execute('SELECT data FROM deleted_jobs WHERE id=?',(jid,)).fetchone()
+    if not row: c.close(); raise RuntimeError('Gelöschter Auftrag nicht gefunden (evtl. abgelaufen).')
+    d=json.loads(row['data']); cols=list(d.keys())
+    c.execute(f"INSERT OR REPLACE INTO jobs ({','.join(cols)}) VALUES ({','.join('?' for _ in cols)})",[d[k] for k in cols])
+    c.execute('DELETE FROM deleted_jobs WHERE id=?',(jid,)); c.commit(); c.close(); return jid
+
+def list_deleted_customers():
+    c=db(); _prune_trash(c,'deleted_customers'); c.commit()
+    out=[]
+    for r in c.execute('SELECT id,deleted_at,data FROM deleted_customers ORDER BY deleted_at DESC'):
+        d=json.loads(r['data']); out.append({'id':r['id'],'deleted_at':r['deleted_at'],'customer':d.get('customer',''),'first_name':d.get('first_name','')})
+    c.close(); return out
+
+def restore_deleted_customer(cid):
+    c=db(); row=c.execute('SELECT data FROM deleted_customers WHERE id=?',(cid,)).fetchone()
+    if not row: c.close(); raise RuntimeError('Gelöschter Kunde nicht gefunden (evtl. abgelaufen).')
+    d=json.loads(row['data']); cols=list(d.keys())
+    c.execute(f"INSERT OR REPLACE INTO customers ({','.join(cols)}) VALUES ({','.join('?' for _ in cols)})",[d[k] for k in cols])
+    c.execute('DELETE FROM deleted_customers WHERE id=?',(cid,)); c.commit(); c.close(); return cid
 
 def backup_db_daily():
     """Create one local SQLite backup per day and retain the latest 14 backups."""
@@ -259,7 +310,8 @@ def nrw_holiday_name(d):
     fixed={(1,1):'Neujahr',(5,1):'Tag der Arbeit',(10,3):'Tag der Deutschen Einheit',(11,1):'Allerheiligen',(12,25):'1. Weihnachtstag',(12,26):'2. Weihnachtstag'}
     if (d.month,d.day) in fixed:return fixed[(d.month,d.day)]
     moving={e-timedelta(days=2):'Karfreitag',e+timedelta(days=1):'Ostermontag',e+timedelta(days=39):'Christi Himmelfahrt',e+timedelta(days=50):'Pfingstmontag',e+timedelta(days=60):'Fronleichnam'}
-    return moving.get(d,'')
+    if d in moving: return moving[d]
+    return (get_app_settings().get('closed_dates') or {}).get(d.isoformat(),'')
 
 def is_workday(d): return d.weekday()<5 and not nrw_holiday_name(d)
 
@@ -283,15 +335,16 @@ def auto_date(c,requested,exclude_id=None,needed_slots=1):
     d=datetime.strptime(date_s,'%Y-%m-%d').date()
     while not is_workday(d):
         date_s=next_workday((d-timedelta(days=1)).isoformat()); d=datetime.strptime(date_s,'%Y-%m-%d').date()
-    while day_count(c,date_s,exclude_id)+needed_slots>8: date_s=next_workday(date_s)
+    reg=regular_slots()
+    while day_count(c,date_s,exclude_id)+needed_slots>reg: date_s=next_workday(date_s)
     return date_s
 
 def fill_buffers(date_s):
-    c=db(); used=day_count(c,date_s)
-    # Puffer 9/10 werden nur genutzt, wenn die 8 regulaeren Plaetze bereits belegt sind.
+    c=db(); used=day_count(c,date_s); reg=regular_slots(); total=reg+buffer_slots()
+    # Puffer wird nur genutzt, wenn die regulaeren Plaetze bereits belegt sind.
     # Kennzeichenuebernahmen brauchen zwei regulaere Plaetze und duerfen nie in den Puffer gezogen werden.
-    if used<8 or used>=10: c.close(); return {'moved':0,'from_date':'','ids':[]}
-    free=10-used; src=next_workday(date_s); selected=[]
+    if used<reg or used>=total: c.close(); return {'moved':0,'from_date':'','ids':[]}
+    free=total-used; src=next_workday(date_s); selected=[]
     for _ in range(366):
         candidates=c.execute('SELECT id,plate_transfer,process FROM jobs WHERE stva_date=? ORDER BY id',(src,)).fetchall()
         remaining=free; selected=[]
@@ -318,11 +371,11 @@ def move_job(jid,target):
     if not is_workday(target_date):
         reason=nrw_holiday_name(target_date) or 'Wochenende'
         c.close(); raise RuntimeError(f'{target} ist kein StVA-Arbeitstag ({reason}).')
-    if day_count(c,target,jid)+needed>8: c.close(); raise RuntimeError('Dieser StVA-Tag hat nicht genügend freie reguläre Plätze (max. 8).')
+    if day_count(c,target,jid)+needed>regular_slots(): c.close(); raise RuntimeError(f'Dieser StVA-Tag hat nicht genügend freie reguläre Plätze (max. {regular_slots()}).')
     c.execute('UPDATE jobs SET stva_date=? WHERE id=?',(target,jid)); c.commit(); c.close(); return target
 
 def save_job(d):
-    cols=['stva_date','customer','first_name','mobile','birthdate','birthplace','birthname','address','postal','city','vehicle_type','manufacturer','plate','process','sign_size','signs','sign_count','plate_transfer','docs','missing','status','fin','zb2','evb','desired_plate','iban','bic_bank','account_holder','country','taxpayer_same_holder','taxpayer_first_name','taxpayer_name','taxpayer_address','taxpayer_postal','taxpayer_city','account_holder_same_taxpayer','need_gbr','need_kurzzeit','need_ausland_kz','need_erhalt','final_price','landline']
+    cols=['stva_date','customer','first_name','mobile','birthdate','birthplace','birthname','address','postal','city','vehicle_type','manufacturer','plate','process','sign_size','signs','sign_count','plate_transfer','docs','missing','status','fin','zb2','evb','desired_plate','iban','bic_bank','account_holder','country','taxpayer_same_holder','taxpayer_first_name','taxpayer_name','taxpayer_address','taxpayer_postal','taxpayer_city','account_holder_same_taxpayer','need_gbr','need_kurzzeit','need_ausland_kz','need_erhalt','final_price','landline','pickup_notified_at']
     c=db(); now=datetime.now().isoformat(timespec='seconds'); requested=d.get('stva_date','') or next_workday(datetime.now().date().isoformat())
     if d.get('id'):
         jid=int(d['id']); current=c.execute('SELECT stva_date FROM jobs WHERE id=?',(jid,)).fetchone()
@@ -341,8 +394,8 @@ def save_job(d):
                 # Gleiche Schutzlogik wie bei neuen Aufträgen: Wochenende/NRW-Feiertag
                 # automatisch auf den nächsten StVA-Arbeitstag verschieben.
                 requested=auto_date(c,requested,exclude_id=jid,needed_slots=needed)
-            elif current and requested!=current['stva_date'] and day_count(c,requested,jid)+needed>8:
-                c.close(); raise RuntimeError('Dieser StVA-Tag hat nicht genügend freie reguläre Plätze (max. 8).')
+            elif current and requested!=current['stva_date'] and day_count(c,requested,jid)+needed>regular_slots():
+                c.close(); raise RuntimeError(f'Dieser StVA-Tag hat nicht genügend freie reguläre Plätze (max. {regular_slots()}).')
             d['stva_date']=requested
         vals=[d.get(k,'') for k in cols]+[jid]; c.execute('UPDATE jobs SET '+','.join(f'{k}=?' for k in cols)+' WHERE id=?',vals)
     else:
@@ -363,6 +416,8 @@ def remove_from_today(jid):
 
 def delete_job(jid):
     c=db()
+    row=c.execute('SELECT * FROM jobs WHERE id=?',(jid,)).fetchone()
+    if row: c.execute('INSERT OR REPLACE INTO deleted_jobs(id,deleted_at,data) VALUES(?,?,?)',(jid,datetime.now().isoformat(timespec='seconds'),json.dumps(dict(row),ensure_ascii=False)))
     c.execute('DELETE FROM intake_checklists WHERE job_id=?',(jid,))
     c.execute('DELETE FROM laufzettel_options WHERE job_id=?',(jid,))
     cur=c.execute('DELETE FROM jobs WHERE id=?',(jid,))
@@ -567,6 +622,39 @@ def _setup_tesseract():
     try: pytesseract.get_tesseract_version()
     except Exception as e: raise RuntimeError('Tesseract OCR ist nicht verfügbar. Bitte INSTALLIEREN.bat erneut ausführen. '+str(e))
     return pytesseract
+
+DEFAULT_PICKUP_MESSAGE=("Guten Tag,\n\nIhre Unterlagen liegen bei uns Fertig und Abholbereit.\n\n"
+    "Die Gesamtkosten belaufen sich auf {price} €.\n\nUnsere Öffnungszeiten sind:\n\n"
+    "Montag und Mittwochs von 07:30 bis 16:30\nDienstags und Donnerstags von 07:30 bis 15:30\nFreitags von 07:30 bis 13:00\n\n"
+    "Mit freundlichen Grüßen \nZulassungsservice Grevenbroich")
+DEFAULT_APP_SETTINGS={'regular_slots':8,'buffer_slots':2,'pickup_message':DEFAULT_PICKUP_MESSAGE,'closed_dates':{},'enabled_radios':['1live','jamfm','bollerwagen','bigfm','swr3','wdr4','bob','sunshine']}
+
+def _app_settings_file():
+    return DATA/'app_settings.json'
+
+def get_app_settings():
+    f=_app_settings_file(); out=dict(DEFAULT_APP_SETTINGS)
+    if f.exists():
+        try: out.update({k:v for k,v in json.loads(f.read_text(encoding='utf-8')).items() if k in DEFAULT_APP_SETTINGS})
+        except Exception: pass
+    out['regular_slots']=max(1,min(20,int(out.get('regular_slots') or 8)))
+    out['buffer_slots']=max(0,min(20,int(out.get('buffer_slots') or 0)))
+    return out
+
+def save_app_settings(patch):
+    cur=get_app_settings()
+    if 'regular_slots' in patch: cur['regular_slots']=max(1,min(20,int(patch['regular_slots'])))
+    if 'buffer_slots' in patch: cur['buffer_slots']=max(0,min(20,int(patch['buffer_slots'])))
+    if 'pickup_message' in patch: cur['pickup_message']=str(patch['pickup_message'] or DEFAULT_PICKUP_MESSAGE)
+    if 'closed_dates' in patch and isinstance(patch['closed_dates'],dict):
+        cur['closed_dates']={str(k):str(v) for k,v in patch['closed_dates'].items() if re.match(r'^\d{4}-\d{2}-\d{2}$',str(k))}
+    if 'enabled_radios' in patch and isinstance(patch['enabled_radios'],list):
+        cur['enabled_radios']=[str(x) for x in patch['enabled_radios'] if str(x) in DEFAULT_APP_SETTINGS['enabled_radios']]
+    _app_settings_file().write_text(json.dumps(cur,ensure_ascii=False),encoding='utf-8')
+    return cur
+
+def regular_slots(): return get_app_settings()['regular_slots']
+def buffer_slots(): return get_app_settings()['buffer_slots']
 
 def _calibration_file():
     return DATA/'scanner_calibration.json'
@@ -1384,6 +1472,7 @@ class H(BaseHTTPRequestHandler):
                     buf=BytesIO(); pim.save(buf,'JPEG',quality=92); b=buf.getvalue()
                 self.send_response(200); self.send_header('Content-Type','image/jpeg'); self.send_header('Cache-Control','no-store'); self.send_header('Content-Length',len(b)); self.end_headers(); self.wfile.write(b)
             elif u.path=='/api/calibration': self.sendj(get_scanner_calibration())
+            elif u.path=='/api/app-settings': self.sendj(get_app_settings())
             elif u.path=='/api/backups': self.sendj(list_backups())
             elif u.path=='/api/update-check': self.sendj(find_update())
             elif u.path=='/scan-preview':
@@ -1424,6 +1513,12 @@ class H(BaseHTTPRequestHandler):
             elif u.path=='/api/personal-notes': self.sendj(personal_notes())
             elif u.path=='/api/jobs': self.sendj(rows())
             elif u.path=='/api/customers': self.sendj(all_customers())
+            elif u.path=='/api/deleted-jobs': self.sendj(list_deleted_jobs())
+            elif u.path=='/api/deleted-customers': self.sendj(list_deleted_customers())
+            elif u.path=='/export/jobs.csv':
+                b=export_jobs_csv(); self.send_response(200); self.send_header('Content-Type','text/csv; charset=utf-8'); self.send_header('Content-Disposition','attachment; filename=auftraege.csv'); self.send_header('Content-Length',len(b)); self.end_headers(); self.wfile.write(b)
+            elif u.path=='/export/customers.csv':
+                b=export_customers_csv(); self.send_response(200); self.send_header('Content-Type','text/csv; charset=utf-8'); self.send_header('Content-Disposition','attachment; filename=kunden.csv'); self.send_header('Content-Length',len(b)); self.end_headers(); self.wfile.write(b)
             elif u.path=='/api/customer-jobs':
                 qs=urllib.parse.parse_qs(u.query); self.sendj(customer_jobs(qs.get('name',[''])[0],qs.get('first_name',[''])[0]))
             elif u.path=='/api/customer-documents':
@@ -1452,8 +1547,14 @@ class H(BaseHTTPRequestHandler):
                 self.sendj({'id':save_customer(d)})
             elif self.path=='/api/customer-delete':
                 delete_customer(int(d.get('id'))); self.sendj({'ok':True})
+            elif self.path=='/api/job-restore':
+                self.sendj({'ok':True,'id':restore_deleted_job(int(d.get('id')))})
+            elif self.path=='/api/customer-restore':
+                self.sendj({'ok':True,'id':restore_deleted_customer(int(d.get('id')))})
             elif self.path=='/api/calibration':
                 self.sendj(save_scanner_calibration(d.get('box')) if d.get('box') else reset_scanner_calibration())
+            elif self.path=='/api/app-settings':
+                self.sendj(save_app_settings(d))
             elif self.path=='/api/backup-restore':
                 self.sendj(restore_backup(d.get('name','')))
             elif self.path=='/api/update-apply':
