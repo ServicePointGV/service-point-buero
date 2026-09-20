@@ -17,6 +17,7 @@ SolidCompression=yes
 CloseApplications=yes
 RestartApplications=no
 UninstallDisplayIcon={app}\{#MyAppExeName}
+SetupIconFile=service-point-logo.ico
 WizardStyle=modern
 
 [Languages]
