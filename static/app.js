@@ -53,16 +53,18 @@ async function loadBackups(){try{let list=(await api('/api/backups')).slice(0,3)
 async function restoreBackup(name){if(!confirm('Sicherung "'+name+'" wiederherstellen?\n\nDer aktuelle Stand wird vorher automatisch gesichert, aber alle Änderungen seit dieser Sicherung gehen sonst verloren.\n\nFortfahren?'))return;try{await api('/api/backup-restore',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name})});alert('Sicherung wiederhergestellt. Die Seite wird neu geladen.');location.reload()}catch(e){alert(e.message)}}
 let calibDrag=null,calibRect=null;
 async function calibInit(){try{let r=await api('/api/calibration');q('#calibStatus').textContent=r.configured?'Aktuell: individueller Kalibrierungsbereich gespeichert.':'Aktuell: Standardbereich (keine Kalibrierung gespeichert).'}catch(e){}}
-async function calibScan(){q('#calibStatus').textContent='Scanner arbeitet – bitte Ausweis-Vorderseite auflegen …';try{await api('/api/scanner',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind:'id',side:'front',doc_type:'personalausweis'})});let img=q('#calibImage');img.src='/calibration-preview?side=front&t='+Date.now();q('#calibImageWrap').classList.remove('hidden');q('#calibSaveBtn').classList.remove('hidden');q('#calibStatus').textContent='Testscan erstellt. Ziehe mit der Maus ein Rechteck über die Ausweiskarte.';setupCalibDrag();img.onload=calibShowSaved}catch(e){q('#calibStatus').textContent='Fehler: '+e.message}}
+async function calibScan(){q('#calibStatus').textContent='Scanner arbeitet – bitte Ausweis-Vorderseite auflegen …';try{await api('/api/scanner',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({kind:'id',side:'front',doc_type:'personalausweis'})});let img=q('#calibImage');img.onload=calibShowSaved;img.src='/calibration-preview?side=front&t='+Date.now();q('#calibImageWrap').classList.remove('hidden');q('#calibSaveBtn').classList.remove('hidden');q('#calibStatus').textContent='Testscan erstellt. Ziehe mit der Maus ein Rechteck über die Ausweiskarte.';setupCalibDrag()}catch(e){q('#calibStatus').textContent='Fehler: '+e.message}}
 function setupCalibDrag(){let wrap=q('#calibImageWrap'),box=q('#calibBox'),img=q('#calibImage');wrap.onmousedown=e=>{let r=img.getBoundingClientRect();calibDrag={x0:e.clientX-r.left,y0:e.clientY-r.top,r};box.style.display='block';box.style.left=calibDrag.x0+'px';box.style.top=calibDrag.y0+'px';box.style.width='0px';box.style.height='0px';e.preventDefault()};wrap.onmousemove=e=>{if(!calibDrag)return;let r=calibDrag.r,x=Math.max(0,Math.min(e.clientX-r.left,r.width)),y=Math.max(0,Math.min(e.clientY-r.top,r.height)),x1=Math.min(x,calibDrag.x0),y1=Math.min(y,calibDrag.y0),w=Math.abs(x-calibDrag.x0),h=Math.abs(y-calibDrag.y0);box.style.left=x1+'px';box.style.top=y1+'px';box.style.width=w+'px';box.style.height=h+'px';calibRect={x1:x1/r.width,y1:y1/r.height,x2:(x1+w)/r.width,y2:(y1+h)/r.height}};wrap.onmouseup=()=>{calibDrag=null};wrap.onmouseleave=()=>{calibDrag=null}}
 async function calibShowSaved(){try{let r=await api('/api/calibration');if(r.configured){let img=q('#calibImage'),rect=img.getBoundingClientRect(),box=q('#calibBox');box.style.display='block';box.style.left=(r.id_box[0]*rect.width)+'px';box.style.top=(r.id_box[1]*rect.height)+'px';box.style.width=((r.id_box[2]-r.id_box[0])*rect.width)+'px';box.style.height=((r.id_box[3]-r.id_box[1])*rect.height)+'px';calibRect={x1:r.id_box[0],y1:r.id_box[1],x2:r.id_box[2],y2:r.id_box[3]}}}catch(e){}}
 async function calibSave(){if(!calibRect||(calibRect.x2-calibRect.x1)<0.03||(calibRect.y2-calibRect.y1)<0.03){alert('Bitte zuerst einen ausreichend großen Bereich auf dem Scan markieren.');return}try{await api('/api/calibration',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({box:[calibRect.x1,calibRect.y1,calibRect.x2,calibRect.y2]})});q('#calibStatus').textContent='Kalibrierung gespeichert.'}catch(e){alert(e.message)}}
-async function calibReset(){await api('/api/calibration',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({box:null})});q('#calibStatus').textContent='Zurückgesetzt auf Standardbereich.';let box=q('#calibBox');if(box)box.style.display='none';calibRect=null}function applyAppearance(a){a=a||{};let r=document.documentElement.style,accent=a.accent||'#1D6FD1',accent2=a.accent2||'#0E4E9C',bg=a.bg||'#F3F5F8',panel=a.panel||'#FFFFFF';r.setProperty('--accent',accent);r.setProperty('--accent-strong',accent2);r.setProperty('--bg',bg);r.setProperty('--panel',panel)}
+async function calibReset(){await api('/api/calibration',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({box:null})});q('#calibStatus').textContent='Zurückgesetzt auf Standardbereich.';let box=q('#calibBox');if(box)box.style.display='none';calibRect=null}function applyAppearance(a){a=a||{};let mode=a.mode||localStorage.getItem('spColorMode')||'light';document.documentElement.setAttribute('data-color-mode',mode);let r=document.documentElement.style,accent=a.accent||'#1D6FD1',accent2=a.accent2||'#0E4E9C';r.setProperty('--accent',accent);r.setProperty('--accent-strong',accent2);if(mode==='light'){r.setProperty('--bg',a.bg||'#F3F5F8');r.setProperty('--panel',a.panel||'#FFFFFF')}else{r.removeProperty('--bg');r.removeProperty('--panel')}syncColorModeButtons()}
 (function(){try{if(localStorage.getItem('spLightBuero190')!=='1'){localStorage.removeItem('spAppearanceDraft');localStorage.removeItem('spAppearance');localStorage.setItem('spLightBuero190','1')}}catch(e){}})();
+function syncColorModeButtons(){let m=document.documentElement.getAttribute('data-color-mode')||'light';let l=q('#themeModeLight'),d=q('#themeModeDark');if(l)l.classList.toggle('active',m==='light');if(d)d.classList.toggle('active',m==='dark')}
+function setColorMode(mode){mode=mode==='dark'?'dark':'light';localStorage.setItem('spColorMode',mode);let a=getAppearance();a.mode=mode;localStorage.setItem('spAppearance',JSON.stringify(a));applyAppearance(a)}
 function getAppearance(){try{return JSON.parse(localStorage.getItem('spAppearance')||'{}')}catch(e){return{}}}
 function syncAppearanceControls(){let a=getAppearance();[['themeAccent','accent','#1D6FD1'],['themeAccent2','accent2','#0E4E9C'],['themeBg','bg','#F3F5F8'],['themePanel','panel','#FFFFFF']].forEach(x=>{let el=q('#'+x[0]);if(el)el.value=a[x[1]]||x[2]})}
 function applyThemePreset(accent,accent2,bg,panel){q('#themeAccent').value=accent;q('#themeAccent2').value=accent2;q('#themeBg').value=bg;q('#themePanel').value=panel;previewTheme()}function previewTheme(){let a=getAppearance();a.accent=q('#themeAccent')?.value||'#1D6FD1';a.accent2=q('#themeAccent2')?.value||'#0E4E9C';a.bg=q('#themeBg')?.value||'#F3F5F8';a.panel=q('#themePanel')?.value||'#FFFFFF';applyAppearance(a)}
-function saveAppearance(){let a=getAppearance();a.accent=q('#themeAccent').value;a.accent2=q('#themeAccent2').value;a.bg=q('#themeBg').value;a.panel=q('#themePanel').value;localStorage.setItem('spAppearance',JSON.stringify(a));applyAppearance(a);alert('Erscheinungsbild lokal gespeichert.')}
+function saveAppearance(){let a=getAppearance();a.mode=localStorage.getItem('spColorMode')||a.mode||'light';a.accent=q('#themeAccent').value;a.accent2=q('#themeAccent2').value;a.bg=q('#themeBg').value;a.panel=q('#themePanel').value;localStorage.setItem('spAppearance',JSON.stringify(a));applyAppearance(a);alert('Erscheinungsbild lokal gespeichert.')}
 applyAppearance(getAppearance());
 load();
 const FORM_CATEGORIES={kauf:{title:'KFZ-Kauf & Verkauf',sub:'Formulare › KFZ-Kauf & Verkauf',items:[['kaufvertrag','Kaufvertrag erstellen','Neutral · ausfüllbar · 2 Seiten'],['veraeusserung','Veräußerungsanzeige öffnen','Rhein-Kreis Neuss']]},online:{title:'Online / i-Kfz Sonderfälle',sub:'Formulare › Online / i-Kfz Sonderfälle',items:[['online_ab_fehler','Online-Abmeldung fehlgeschlagen','Erklärung nach bereits erfolgter Entwertung'],['online_zul_fehler','Online-Zulassung fehlgeschlagen','Erklärung nach bereits erfolgter Entwertung']]},verlust:{title:'Verlust & Ersatz',sub:'Formulare › Verlust & Ersatz',items:[['verlust_zbi','Verlust ZB I / Fahrzeugschein','Verlusterklärung'],['verlust_kz','Kennzeichen-Verlustanzeige','Verlust oder Diebstahl von Kennzeichenschildern']]},weitere:{title:'Weitere Formulare',sub:'Formulare › Weitere Formulare',items:[['kurzzeit','Kurzzeitkennzeichen – Empfangsbevollmächtigter',''],['gbr','Haftungserklärung GbR',''],['ust_eu','Mitteilung Umsatzsteuerzwecke',''],['kz_abtritt','Abtrittserklärung Kennzeichen',''],['ausland_kz','Verbleib ausländischer Kennzeichen',''],['erhalt','Erhalt Fahrzeugpapiere','']]},standard:{title:'Standardformulare',sub:'Formulare › Standardformulare',items:[['vollmacht','Vollmacht',''],['sepa','SEPA-Lastschriftmandat',''],['laufzettel','Laufzettel','']]}};
@@ -79,7 +81,7 @@ async function copyPickupSms(id){let j=jobs.find(x=>x.id===id);if(!j)return;if(!
 async function deleteJob(id){let j=jobs.find(x=>x.id===id);if(!confirm('Auftrag'+(j?(' von '+((j.first_name||'')+' '+(j.customer||'')).trim()):'')+' löschen? (Kann 7 Tage lang über Einstellungen → Papierkorb wiederhergestellt werden.)'))return;try{await api('/api/job-delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});await load();renderAll()}catch(e){alert(e.message)}}function dayBlock(date,arr,withHead=true){let slots=expandSlots(arr),rs='',reg=appSettings.regular_slots,buf=appSettings.buffer_slots,total=reg+buf;for(let n=1;n<=total;n++){let j=slots[n-1];rs+=j?jobRow(j,n,n>reg):`<tr class="empty ${n>reg?'buffer':''}"><td>${n}${n>reg?' · Puffer':''}</td><td>${fmt(date)}</td><td colspan="12">frei</td></tr>`}let usedBuffer=Math.max(0,slots.length-reg),freeBuffer=Math.max(0,buf-usedBuffer);let head=withHead?`<tr class="dayhead"><td colspan="14">${fmt(date)} · ${Math.min(slots.length,reg)}/${reg} geplant · ${freeBuffer} Puffer frei</td></tr>`:'';return head+rs}
 const DASH_STATUS_OPTIONS=['Offen','Beim StVA','Im Büro','Rückfrage','Abholbereit','Wartet auf Abholung','Abgeholt'];
 const DASH_PROCESS_OPTIONS=['Neuzulassung','Wiederzulassung','Umschreibung','Außerbetriebsetzung','Änderung Fahrzeugtechnik','Änderung Halterdaten','Ersatzausstellung ZB I','Ausfuhrkennzeichen','Kurzzeitkennzeichen','Kennzeichenverlust','Kennzeichenübernahme'];
-async function dashCellSave(el){let tr=el.closest('tr'),jid=+tr.dataset.jobid,field=el.dataset.field,value=el.value;if(jid){let j=jobs.find(x=>x.id===jid);if(!j)return;let d={...j,[field]:value};await api('/api/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)});await load()}else{if(!value.trim())return;let d={stva_date:isoToday(),[field]:value};await api('/api/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)});await load()}}
+async function dashCellSave(el){let tr=el.closest('tr'),jid=+tr.dataset.jobid,field=el.dataset.field,value=el.value;if(jid){let j=jobs.find(x=>x.id===jid);if(!j)return;let old=j[field];j[field]=value;tr.dataset.status=field==='status'?value:(j.status||'');try{await api('/api/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...j,[field]:value})})}catch(e){j[field]=old;el.value=old||'';alert('Speichern fehlgeschlagen: '+e.message)}}else{if(!String(value).trim())return;let d={stva_date:tr.dataset.date||dashDate||isoToday(),[field]:value};try{await api('/api/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(d)});await load()}catch(e){alert('Speichern fehlgeschlagen: '+e.message)}}}
 function matrixStatusMeta(status){let s=(status||'').trim();if(['Erledigt','Abholbereit','Wartet auf Abholung','Abgeholt'].includes(s))return ['✓ '+s,'statusDone','done'];if(s==='Beim StVA')return ['⟳ In Bearbeitung','statusWork','working'];if(s==='Im Büro')return ['⟳ Im Büro','statusWork','working'];if(s==='Rückfrage')return ['! Rückfrage','statusQuestion','question'];return ['◷ '+(s||'Geplant'),'statusPlan','planned']}
 let dashDate=isoToday();
 function toggleDashDayPicker(){let p=q('#dashDayPicker');if(!p.classList.contains('hidden')){p.classList.add('hidden');return}renderDashDayPicker();p.classList.remove('hidden')}
@@ -90,7 +92,39 @@ function togglePreplanDayPicker(){let p=q('#preplanDayPicker');if(!p.classList.c
 function preplanMonthShift(n){let d=new Date(preplanDate+'T00:00:00');preplanDate=isoLocal(new Date(d.getFullYear(),d.getMonth()+n,1));renderPreplanDayPicker()}
 function pickPreplanDate(iso){q('#preplanForm').elements.stva_date.value=iso;togglePreplanDayPicker();updatePreplanInfo()}
 function renderPreplanDayPicker(){let d=new Date(preplanDate+'T00:00:00'),y=d.getFullYear(),m=d.getMonth(),last=new Date(y,m+1,0).getDate(),monthNamesFull=['Januar','Februar','März','April','Mai','Juni','Juli','August','September','Oktober','November','Dezember'];let btns=[];for(let day=1;day<=last;day++){let dt=new Date(y,m,day),iso=isoLocal(dt),wd=dt.getDay(),holiday=nrwHolidayName(dt),closed=wd===0||wd===6||!!holiday,cls='closedDay2',title=closed?(holiday||'Wochenende'):'';if(!closed){let used=jobs.filter(j=>j.stva_date===iso).reduce((a,j)=>a+slotWeight(j),0),free=Math.max(0,appSettings.regular_slots-used);cls=free===0?'capFull':free<=2?'capLow':'capFree';title=free+' von '+appSettings.regular_slots+' regulären Plätzen frei'}btns.push(`<button type="button" class="dashDayBtn ${cls}" title="${esc(title)}" onclick="pickPreplanDate('${iso}')">${day}</button>`)}q('#preplanDayPicker').innerHTML=`<div class="dashDayPickerHead"><button type="button" class="btn" onclick="event.stopPropagation();preplanMonthShift(-1)">‹</button><b>${monthNamesFull[m]} ${y}</b><button type="button" class="btn" onclick="event.stopPropagation();preplanMonthShift(1)">›</button></div><div class="dashDayGrid">${btns.join('')}</div><div class="muted" style="font-size:11px;margin-top:8px;display:flex;gap:10px;flex-wrap:wrap"><span><i class="legendDot capFree"></i> frei</span><span><i class="legendDot capLow"></i> knapp</span><span><i class="legendDot capFull"></i> voll</span><span><i class="legendDot closedDay2"></i> geschlossen</span></div>`}
-function renderDash(){let t=dashDate,now=new Date(t+'T00:00:00'),holiday=nrwHolidayName(now),closed=now.getDay()===0||now.getDay()===6||!!holiday,a=jobs.filter(j=>j.stva_date===t).sort((a,b)=>a.id-b.id),slots=expandSlots(a),usedBuffer=Math.max(0,slots.length-appSettings.regular_slots),freeBuffer=Math.max(0,appSettings.buffer_slots-usedBuffer),counts={done:0,working:0,question:0,planned:0};let rows='';if(closed&&!slots.length){let why=holiday||'Wochenende';rows=`<tr class="matrixFree"><td colspan="9" style="padding:28px!important;text-align:center;color:#83dca2!important"><b>Kein StVA-Tag</b><br><small>${esc(why)}</small></td></tr>`;}for(let n=1;n<=(appSettings.regular_slots+appSettings.buffer_slots)&&(!closed||slots.length);n++){let j=slots[n-1],buffer=n>appSettings.regular_slots,jid=j?j.id:0;if(j){let meta=matrixStatusMeta(j.status);counts[meta[2]]++}let name=j?(j.customer||''):'',proc=j?(j.process||''):'',plate=j?(j.plate||j.desired_plate||''):'',mobile=j?(j.mobile||''):'',missing=j?(j.missing||''):'',status=j?(j.status||'Offen'):'',slotLabel=j&&j._slotLabel?`<small>${esc(j._slotLabel)}</small>`:'',openBtn=j?`<button type="button" class="dashOpenBtn" onclick="event.stopPropagation();editJob(${jid},'dash')" title="Auftrag öffnen">↗</button>`:`<button type="button" class="dashOpenBtn" onclick="event.stopPropagation();openNewChoice()" title="Neuen Auftrag anlegen">↗</button>`,waBtn=j?`<button type="button" class="dashOpenBtn waBtn" onclick="event.stopPropagation();sendPickupWhatsapp(${jid})" title="Abholung per WhatsApp mitteilen"><img src="/static/img/whatsapp-logo.svg" alt="WhatsApp"></button><button type="button" class="dashOpenBtn smsBtn" onclick="event.stopPropagation();copyPickupSms(${jid})" title="Text für SMS kopieren (Phone Link)">✉</button>`:'',callBtn=j?`<button type="button" class="dashOpenBtn smsBtn" onclick="event.stopPropagation();callCustomer(${jid})" title="Kunde anrufen">📞</button>`:'',invoiceBtn=j?`<button type="button" class="dashOpenBtn smsBtn" onclick="event.stopPropagation();createBillbeeInvoice(${jid})" title="Rechnung erstellen (Billbee)">🧾</button>`:'';rows+=`<tr class="${buffer?'matrixBuffer':''} ${j?'':'matrixFree'}" data-jobid="${jid}" data-status="${esc(status)}" data-kz="${j&&j._slotLabel?'1':'0'}"><td class="slotCell">${n}${buffer?' · P':''}${slotLabel}${openBtn}</td><td><input class="dashCell" data-field="customer" value="${esc(name)}" onchange="dashCellSave(this)" placeholder="frei"></td><td><select class="dashCell" data-field="process" onchange="dashCellSave(this)"><option value="" ${proc?'':'selected'}></option>${DASH_PROCESS_OPTIONS.map(x=>`<option ${x===proc?'selected':''}>${esc(x)}</option>`).join('')}${proc&&!DASH_PROCESS_OPTIONS.includes(proc)?`<option selected>${esc(proc)}</option>`:''}</select></td><td class="plateCell"><input class="dashCell" data-field="plate" value="${esc(plate)}" onchange="dashCellSave(this)"></td><td><input class="dashCell" data-field="mobile" value="${esc(mobile)}" onchange="dashCellSave(this)"></td><td><select class="dashCell" data-field="status" onchange="dashCellSave(this)">${DASH_STATUS_OPTIONS.map(s=>`<option ${s===status?'selected':''}>${esc(s)}</option>`).join('')}</select></td><td><input class="dashCell" data-field="missing" value="${esc(missing)}" onchange="dashCellSave(this)"></td><td>${invoiceBtn}</td><td>${waBtn}${callBtn}</td></tr>`}q('#kToday').textContent=slots.length;q('#kPlan').textContent=Math.min(slots.length,appSettings.regular_slots)+'/'+appSettings.regular_slots;q('#kBuffer').textContent=freeBuffer;q('#kAll').textContent=jobs.length;if(q('#kPickupWaiting'))q('#kPickupWaiting').textContent=pickupWaitingJobs().length;q('#kDone').textContent=counts.done;q('#kWorking').textContent=counts.working;q('#kPlanned').textContent=counts.planned;q('#kQuestions').textContent=counts.question;q('#todayInfo').textContent=fmt(t)+' · '+Math.min(slots.length,appSettings.regular_slots)+'/'+appSettings.regular_slots+' geplant · '+freeBuffer+' Puffer frei';if(q('#headerRegular'))q('#headerRegular').textContent=Math.min(slots.length,appSettings.regular_slots)+' / '+appSettings.regular_slots;if(q('#headerBuffer'))q('#headerBuffer').textContent=freeBuffer;if(q('#headerTotal'))q('#headerTotal').textContent=slots.length;if(q('#slotSummaryText'))q('#slotSummaryText').textContent=(appSettings.regular_slots+appSettings.buffer_slots)+' feste Positionen: '+appSettings.regular_slots+' regulär + '+appSettings.buffer_slots+' Puffer';q('#todayTable').innerHTML=`<div class="matrixTodayScroll"><table class="matrixTodayTable"><thead><tr><th>Nr.</th><th>Kunde / Firma</th><th>Vorgang</th><th>Kennzeichen</th><th>Mobil</th><th>Status</th><th>Rückfrage</th><th>Rechnung</th><th>Nachricht</th></tr></thead><tbody>${rows}</tbody></table></div>`}
+function renderDash(){
+  if(typeof dayGridPending!=='undefined' && dayGridPending) return;
+  // Vortag bleibt sichtbar; die Kennzahlen beziehen sich weiterhin auf heute.
+  // dashDate bleibt für Kalender/Navigation erhalten; die Arbeitszentrale startet immer bei heute.
+  let first=isoToday(),base=new Date(first+'T00:00:00'),dates=[-1,0,1,2].map(n=>isoLocal(addDays(base,n)));
+  let todaySlots=[],todayFreeBuffer=appSettings.buffer_slots,counts={done:0,working:0,question:0,planned:0};
+  let sections=dates.map((t,dayIndex)=>{
+    let now=new Date(t+'T00:00:00'),holiday=nrwHolidayName(now),closed=now.getDay()===0||now.getDay()===6||!!holiday,
+        a=jobs.filter(j=>j.stva_date===t).sort((a,b)=>a.id-b.id),slots=expandSlots(a),
+        usedBuffer=Math.max(0,slots.length-appSettings.regular_slots),freeBuffer=Math.max(0,appSettings.buffer_slots-usedBuffer),rows='';
+    if(t===first){todaySlots=slots;todayFreeBuffer=freeBuffer}
+    if(closed&&!slots.length){let why=holiday||'Wochenende';rows=`<tr class="matrixFree"><td colspan="9" style="padding:28px!important;text-align:center;color:#83dca2!important"><b>Kein StVA-Tag</b><br><small>${esc(why)}</small></td></tr>`}
+    for(let n=1;n<=(appSettings.regular_slots+appSettings.buffer_slots)&&(!closed||slots.length);n++){
+      let j=slots[n-1],buffer=n>appSettings.regular_slots,jid=j?j.id:0;
+      if(t===first&&j){let meta=matrixStatusMeta(j.status);counts[meta[2]]++}
+      let name=j?(j.customer||''):'',proc=j?(j.process||''):'',plate=j?(j.plate||j.desired_plate||''):'',mobile=j?(j.mobile||''):'',missing=j?(j.missing||''):'',status=j?(j.status||'Offen'):'',
+          slotLabel=j&&j._slotLabel?`<small>${esc(j._slotLabel)}</small>`:'',
+          openBtn=j?`<button type="button" class="dashOpenBtn" onclick="event.stopPropagation();editJob(${jid},'dash')" title="Auftrag öffnen">↗</button>`:`<button type="button" class="dashOpenBtn" onclick="event.stopPropagation();openNewChoice()" title="Neuen Auftrag anlegen">↗</button>`,
+          waBtn=j?`<button type="button" class="dashOpenBtn waBtn" onclick="event.stopPropagation();sendPickupWhatsapp(${jid})" title="Abholung per WhatsApp mitteilen"><img src="/static/img/whatsapp-logo.svg" alt="WhatsApp"></button><button type="button" class="dashOpenBtn smsBtn" onclick="event.stopPropagation();copyPickupSms(${jid})" title="Text für SMS kopieren (Phone Link)">✉</button>`:'',
+          callBtn=j?`<button type="button" class="dashOpenBtn smsBtn" onclick="event.stopPropagation();callCustomer(${jid})" title="Kunde anrufen">📞</button>`:'<span class="actionEmpty">–</span>',
+          invoiceBtn=j?`<button type="button" class="dashOpenBtn smsBtn" onclick="event.stopPropagation();createBillbeeInvoice(${jid})" title="Rechnung erstellen (Billbee)">🧾</button>`:'<span class="actionEmpty">–</span>';
+      rows+=`<tr class="${buffer?'matrixBuffer':''} ${j?'':'matrixFree'}" data-jobid="${jid}" data-date="${t}" data-status="${esc(status)}" data-kz="${j&&j._slotLabel?'1':'0'}"><td class="slotCell">${n}${buffer?' · P':''}${slotLabel}${openBtn}</td><td><input class="dashCell" data-field="customer" value="${esc(name)}" onchange="dashCellSave(this)" placeholder="frei"></td><td><select class="dashCell" data-field="process" onchange="dashCellSave(this)"><option value="" ${proc?'':'selected'}></option>${DASH_PROCESS_OPTIONS.map(x=>`<option ${x===proc?'selected':''}>${esc(x)}</option>`).join('')}${proc&&!DASH_PROCESS_OPTIONS.includes(proc)?`<option selected>${esc(proc)}</option>`:''}</select></td><td class="plateCell"><input class="dashCell" data-field="plate" value="${esc(plate)}" onchange="dashCellSave(this)"></td><td><input class="dashCell" data-field="mobile" value="${esc(mobile)}" onchange="dashCellSave(this)"></td><td><select class="dashCell" data-field="status" onchange="dashCellSave(this)">${DASH_STATUS_OPTIONS.map(x=>`<option ${x===status?'selected':''}>${esc(x)}</option>`).join('')}</select></td><td><input class="dashCell" data-field="missing" value="${esc(missing)}" onchange="dashCellSave(this)"></td><td>${invoiceBtn}</td><td>${waBtn}${callBtn}</td></tr>`
+    }
+    let label=['Gestern','Heute','Morgen','Übermorgen'][dayIndex];
+    return `<div class="dashThreeDayBlock"><div class="dayhead" style="padding:9px 12px;font-weight:700">${label} · ${fmt(t)} · ${Math.min(slots.length,appSettings.regular_slots)}/${appSettings.regular_slots} geplant · ${freeBuffer} Puffer frei${closed?' · '+esc(holiday||'Wochenende'):''}</div><table class="matrixTodayTable"><thead><tr><th>Nr.</th><th>Kunde / Firma</th><th>Vorgang</th><th>Kennzeichen</th><th>Mobil</th><th>Status</th><th>Rückfrage</th><th>Rechnung</th><th>Nachricht</th></tr></thead><tbody>${rows}</tbody></table></div>`
+  }).join('');
+  q('#kToday').textContent=todaySlots.length;q('#kPlan').textContent=Math.min(todaySlots.length,appSettings.regular_slots)+'/'+appSettings.regular_slots;q('#kBuffer').textContent=todayFreeBuffer;q('#kAll').textContent=jobs.length;
+  if(q('#kPickupWaiting'))q('#kPickupWaiting').textContent=pickupWaitingJobs().length;q('#kDone').textContent=counts.done;q('#kWorking').textContent=counts.working;q('#kPlanned').textContent=counts.planned;q('#kQuestions').textContent=counts.question;
+  q('#todayInfo').textContent='Gestern · Heute · Morgen · Übermorgen';if(q('#headerRegular'))q('#headerRegular').textContent=Math.min(todaySlots.length,appSettings.regular_slots)+' / '+appSettings.regular_slots;if(q('#headerBuffer'))q('#headerBuffer').textContent=todayFreeBuffer;if(q('#headerTotal'))q('#headerTotal').textContent=todaySlots.length;
+  if(q('#slotSummaryText'))q('#slotSummaryText').textContent='4-Tage-Ansicht · '+(appSettings.regular_slots+appSettings.buffer_slots)+' Positionen je Tag: '+appSettings.regular_slots+' regulär + '+appSettings.buffer_slots+' Puffer';
+  q('#todayTable').innerHTML=`<div class="matrixTodayScroll">${sections}</div>`;
+  initDayGrid();
+}
 function printToday(){window.print()}
 function openTodayCalendar(){allYear=new Date().getFullYear();allMonth=new Date().getMonth();allDay=-1;show('all')}
 function easterSunday(y){let a=y%19,b=Math.floor(y/100),c=y%100,d=Math.floor(b/4),e=b%4,f=Math.floor((b+8)/25),g=Math.floor((b-f+1)/3),h=(19*a+b-d-g+15)%30,i=Math.floor(c/4),k=c%4,l=(32+2*e+2*i-h-k)%7,m=Math.floor((a+11*h+22*l)/451),mo=Math.floor((h+l-7*m+114)/31)-1,day=((h+l-7*m+114)%31)+1;return new Date(y,mo,day)}
@@ -110,7 +144,7 @@ function openPickupWaitingList(){pickupFilterActive=true;show('all');renderAll()
 function closePickupWaitingList(){pickupFilterActive=false;renderAll()}
 function renderPickupWaitingList(){let list=pickupWaitingJobs();q('#allDateTrigger').textContent='Wartet auf Abholung ('+list.length+')';q('#exitPickupFilterBtn').classList.remove('hidden');let body=list.map(j=>{let days=Math.max(0,Math.floor((Date.now()-new Date(j.pickup_notified_at))/86400000));return jobRow(j,days+(days===1?' Tag':' Tage'),false)}).join('');q('#allTable').innerHTML=body?'<table><thead><tr>'+heads+'</tr></thead><tbody>'+body+'</tbody></table>':'<p class="muted">Aktuell wartet niemand auf Abholung.</p>'}
 function renderAll(){if(pickupFilterActive){renderPickupWaitingList();return}q('#exitPickupFilterBtn').classList.add('hidden');let s=(q('#search').value||'').toLowerCase();q('#allDateTrigger').textContent=allDateLabel();let match=j=>JSON.stringify(j).toLowerCase().includes(s),undated=jobs.filter(j=>match(j)&&!j.stva_date),dated=jobs.filter(j=>match(j)&&j.stva_date&&+j.stva_date.slice(0,4)===allYear&&(allMonth<0||+j.stva_date.slice(5,7)===allMonth+1)),groups={};dated.forEach(j=>(groups[j.stva_date]??=[]).push(j));let body='';if(allMonth===-2){body=unscheduledRows(undated)}else if(allMonth>=0&&allDay>=1){let dd=new Date(allYear,allMonth,allDay),iso=isoLocal(dd),holiday=nrwHolidayName(dd),weekend=dd.getDay()===0||dd.getDay()===6;if(weekend||holiday){let why=holiday?`<span class="holidayName">${holiday}</span> · Kein StVA-Tag`:'Wochenende · Kein StVA-Tag';body=`<tr class="closedDay"><td colspan="14">${fmt(iso)} · ${why}</td></tr>`}else{body=dayBlock(iso,(groups[iso]||[]).sort((a,b)=>a.id-b.id))}}else if(allMonth>=0){body=monthDayBlocks(allYear,allMonth,groups)}else{let dates=Object.keys(groups).sort();body=dates.map(d=>dayBlock(d,groups[d].sort((a,b)=>a.id-b.id))+`<tr class="daySpacer"><td colspan="14"></td></tr>`).join('');if(undated.length)body+=`<tr class="daySpacer"><td colspan="14"></td></tr>`+unscheduledRows(undated)}q('#allTable').innerHTML=body?'<table><thead><tr>'+heads+'</tr></thead><tbody>'+body+'</tbody></table>':'<p>Keine passenden Aufträge in dieser Auswahl.</p>'}
-let intakeStep=0;let intake={process:'',plate_transfer:false,id_type:'personalausweis',id_front:false,id_back:false,extra_needed:false,extra_done:false,bank_done:false,taxpayer_same_holder:true,account_holder_same_taxpayer:true,taxpayer_id_type:'personalausweis',taxpayer_id_front:false,taxpayer_id_back:false,zb1:false,zb2:false,hu:false,coc:false,evb_doc:false,notes:'',need_gbr:false,need_kurzzeit:false,need_ausland_kz:false,need_erhalt:false,old_plates_received:false,old_vehicle_doc_received:false,customer_kind:'privat',handelsregister_done:false,gewerbeanmeldung_done:false};
+let intakeStep=0;let intake={process:'',plate_transfer:false,id_type:'personalausweis',id_front:false,id_back:false,extra_needed:false,extra_done:false,bank_done:false,taxpayer_same_holder:true,account_holder_same_taxpayer:true,taxpayer_id_type:'personalausweis',taxpayer_id_front:false,taxpayer_id_back:false,zb1:false,zb2:false,hu:false,coc:false,evb_doc:false,notes:'',need_gbr:false,need_kurzzeit:false,need_ausland_kz:false,need_erhalt:false,old_plates_received:false,old_vehicle_doc_received:false,customer_kind:'privat',handelsregister_done:false,gewerbeanmeldung_done:false,manual_holder:false};
 const PROCESS_PROFILES={
 'Neuzulassung':{bank:1,evb:1,safety:1,req:['zb2','coc'],cond:['HU nur falls erforderlich','Minderjährig / Firma / GbR: Zusatzunterlagen']},
 'Wiederzulassung':{bank:1,evb:1,safety:1,req:['zb1','zb2','hu'],cond:['Saison / E / H / Kennzeichenwunsch prüfen']},
@@ -164,6 +198,8 @@ function bankField(name,v,el){
 }
 function taxField(name,v){q('#f').elements[name].value=v;updateBankLive()}
 function vehicleField(name,v){q('#f').elements[name].value=v}
+function holderField(name,v){let f=q('#f');if(f&&f.elements[name])f.elements[name].value=v}
+function toggleManualHolder(){intake.manual_holder=!intake.manual_holder;renderWizard()}
 function bankComplete(){
  let f=q('#f'),iban=f.elements.iban.value||'',holder=f.elements.account_holder.value||'',sameTax=intake.taxpayer_same_holder!==false;
  let tn=f.elements.taxpayer_name.value||'',ta=f.elements.taxpayer_address.value||'',tp=f.elements.taxpayer_postal.value||'',tc=f.elements.taxpayer_city.value||'';
@@ -177,7 +213,20 @@ function setTaxpayerSame(v){intake.taxpayer_same_holder=!!v;let f=q('#f');f.elem
 function setAccountSameTaxpayer(v){intake.account_holder_same_taxpayer=!!v;q('#f').elements.account_holder_same_taxpayer.value=v?'Ja':'Nein';if(v){let f=q('#f'),name=intake.taxpayer_same_holder!==false?((f.elements.first_name.value+' '+f.elements.customer.value).trim()):((f.elements.taxpayer_first_name.value+' '+f.elements.taxpayer_name.value).trim());if(name)f.elements.account_holder.value=name;}renderWizard()}
 function renderWizard(){chips();let b=q('#wizardbody'),steps=activeSteps(),step=steps[intakeStep];let back=`<button class="btn" onclick="navStep(${intakeStep-1})" ${intakeStep===0?'disabled':''}>Zurück</button>`;let next=`<button class="btn primary" onclick="navStep(${intakeStep+1})" ${step==='Auftragswahl'&&!intake.process?'disabled':''}>Weiter</button>`;
 if(step==='Auftragswahl'){let procs=['Neuzulassung','Wiederzulassung','Umschreibung','Außerbetriebsetzung','Änderung Fahrzeugtechnik','Änderung Halterdaten','Ersatzausstellung ZB I','Ausfuhrkennzeichen','Kurzzeitkennzeichen','Kennzeichenverlust'];b.innerHTML=`<h3>1. Auftragswahl</h3><div class="transferBox"><div class="muted" style="margin-bottom:8px"><b>Privat- oder Firmenkunde?</b></div><div class="bigchoice"><button class="choice ${intake.customer_kind!=='firma'?'selected':''}" onclick="setChoice('customer_kind','privat')"><b>Privatkunde</b></button><button class="choice ${intake.customer_kind==='firma'?'selected':''}" onclick="setChoice('customer_kind','firma')"><b>Firmenkunde</b></button></div></div><p>Um welche Angelegenheit handelt es sich?</p><div class="processGrid">${procs.map(x=>`<button class="choice ${intake.process===x?'selected':''}" onclick="setChoice('process','${x}')"><b>${x}</b></button>`).join('')}</div>${requirementBox()}<div class="transferBox"><label class="checkline"><input type="checkbox" ${intake.plate_transfer?'checked':''} onchange="check('plate_transfer',this)"> <b>Kennzeichenübernahme vom bisherigen Fahrzeug</b></label><div class="muted">Kennzeichenübernahme reserviert automatisch <b>2 reguläre StVA-Plätze</b>.</div></div><div class="wizardfoot">${back}${next}</div>`}
-else if(step==='Identität')b.innerHTML=`<h3>Identitätsdokument</h3><p>Welches Dokument legt der Kunde vor?</p><div class="bigchoice">${[['personalausweis','Personalausweis'],['reisepass','Reisepass']].map(x=>`<button class="choice ${intake.id_type===x[0]?'selected':''}" onclick="setChoice('id_type','${x[0]}')"><b>${x[1]}</b></button>`).join('')}</div><div class="infobox" style="margin-top:12px"><b>Scanposition:</b> Dokument bündig oben links auf das Flachbett legen. Die Software schneidet nur diesen Kartenbereich aus dem A4-Scan aus.</div><div class="actions"><button class="btn primary scanbtn" onclick="launchScan('id','front')">🪪 ${intake.id_type==='reisepass'?'Reisepass scannen':'1. Vorderseite scannen'}</button>${intake.id_type==='reisepass'?'':`<button class="btn primary scanbtn" onclick="launchScan('id','back')">↩ 2. Rückseite scannen</button>`}</div>${scanState()}<button class="btn ocrAction" style="margin-top:16px" onclick="recognize('id')">🔎 Vorname, Nachname und Anschrift erkennen</button>${idOCRReview()}${ocrDiag()}<h3 style="margin-top:22px">Meldebescheinigung</h3><p>Ist eine Meldebescheinigung oder ein anderer zusätzlicher Nachweis erforderlich?</p><div class="bigchoice"><button class="choice ${intake.extra_needed?'selected':''}" onclick="setChoice('extra_needed',true)"><b>Ja</b></button><button class="choice ${!intake.extra_needed?'selected':''}" onclick="setChoice('extra_needed',false)"><b>Nein</b></button></div>${intake.extra_needed?`<button class="btn primary scanbtn" onclick="launchScan('extra')">📄 Zusatzdokument scannen</button>${scanState()}<label class="checkline"><input type="checkbox" ${intake.extra_done?'checked':''} onchange="check('extra_done',this)"> Zusatzdokument gescannt</label>`:'<div class="okbox">Kein Zusatzdokument ausgewählt.</div>'}<div class="wizardfoot">${back}${next}</div>`;
+else if(step==='Identität')b.innerHTML=`<div class="identityGrid">
+<div class="identitySection">
+<div class="identitySectionHead"><span class="identityStepNo">1</span><div><h3>Identitätsdokument</h3><p>Dokument auswählen und scannen. Die Halterdaten sind darunter jederzeit direkt erfassbar.</p></div></div>
+<div class="identityChoiceRow">${[['personalausweis','Personalausweis'],['reisepass','Reisepass']].map(x=>`<button class="choice ${intake.id_type===x[0]?'selected':''}" onclick="setChoice('id_type','${x[0]}')"><b>${x[1]}</b></button>`).join('')}</div>
+<div class="identityHint"><b>Scanposition:</b> Dokument bündig oben links auf das Flachbett legen.</div>
+<div class="identityActions"><button class="btn primary scanbtn" onclick="launchScan('id','front')">🪪 ${intake.id_type==='reisepass'?'Reisepass scannen':'Vorderseite scannen'}</button>${intake.id_type==='reisepass'?'':`<button class="btn primary scanbtn" onclick="launchScan('id','back')">↩ Rückseite scannen</button>`}</div>
+${scanState()}<div class="subPanel" style="margin-top:14px"><h4>Halterdaten</h4><div class="grid"><label>Vorname<input value="${esc(q('#f').elements.first_name.value||'')}" oninput="holderField('first_name',this.value)"></label><label>Nachname / Firma<input value="${esc(q('#f').elements.customer.value||'')}" oninput="holderField('customer',this.value)"></label><label>Mobil<input value="${esc(q('#f').elements.mobile.value||'')}" oninput="holderField('mobile',this.value)"></label><label>Festnetz<input value="${esc(q('#f').elements.landline.value||'')}" oninput="holderField('landline',this.value)"></label><label class="wide">Straße + Hausnr.<input value="${esc(q('#f').elements.address.value||'')}" oninput="holderField('address',this.value)"></label><label>PLZ<input maxlength="5" inputmode="numeric" value="${esc(q('#f').elements.postal.value||'')}" oninput="this.value=this.value.replace(/\D/g,'').slice(0,5);holderField('postal',this.value)"></label><label>Ort<input value="${esc(q('#f').elements.city.value||'')}" oninput="holderField('city',this.value)"></label></div><div class="identityDone" style="margin-top:10px">Die Halterdaten können jederzeit direkt eingegeben oder ergänzt werden.</div></div>
+</div>
+<div class="identitySection">
+<div class="identitySectionHead"><span class="identityStepNo">2</span><div><h3>Meldebescheinigung</h3><p>Nur auswählen, wenn ein zusätzlicher Nachweis erforderlich ist.</p></div></div>
+<div class="identityChoiceRow"><button class="choice ${intake.extra_needed?'selected':''}" onclick="setChoice('extra_needed',true)"><b>Ja, erforderlich</b></button><button class="choice ${!intake.extra_needed?'selected':''}" onclick="setChoice('extra_needed',false)"><b>Nein</b></button></div>
+${intake.extra_needed?`<div class="identityExtraBox"><button class="btn primary scanbtn" onclick="launchScan('extra')">📄 Zusatzdokument scannen</button>${scanState()}<label class="checkline"><input type="checkbox" ${intake.extra_done?'checked':''} onchange="check('extra_done',this)"> Zusatzdokument gescannt</label></div>`:'<div class="identityDone">✓ Kein Zusatzdokument erforderlich.</div>'}
+</div>
+</div><div class="wizardfoot">${back}${next}</div>`;
 else if(step==='Firmenunterlagen')b.innerHTML=`<h3>Firmenunterlagen</h3><p>Als Firmenkunde bitte Handelsregisterauszug und Gewerbeanmeldung scannen.</p><button class="btn primary scanbtn" onclick="launchScan('handelsregister')">📄 Handelsregisterauszug scannen</button>${scanState()}<label class="checkline"><input type="checkbox" ${intake.handelsregister_done?'checked':''} onchange="check('handelsregister_done',this)"> Handelsregisterauszug gescannt</label><button class="btn primary scanbtn" style="margin-top:10px" onclick="launchScan('gewerbeanmeldung')">📄 Gewerbeanmeldung scannen</button>${scanState()}<label class="checkline"><input type="checkbox" ${intake.gewerbeanmeldung_done?'checked':''} onchange="check('gewerbeanmeldung_done',this)"> Gewerbeanmeldung gescannt</label><div class="wizardfoot">${back}${next}</div>`;
 else if(step==='Bank'){
 let f=q('#f'),iban=f.elements.iban.value||'',holder=f.elements.account_holder.value||'';
@@ -206,11 +255,141 @@ async function saveCurrentSilently(){let f=q('#f'),id=f.elements.id.value;if(!id
 async function pdfs(){let id=q('#f').elements.id.value;if(!id){alert('Bitte Auftrag zuerst speichern.');return}try{await saveCurrentSilently();let r=await api('/api/pdfs?id='+id);alert('PDFs erstellt.\nOrdner: '+r.folder+'\n\n'+r.files.join('\n'))}catch(e){alert(e.message)}}async function printPackage(){let id=q('#f').elements.id.value;if(!id){alert('Bitte Auftrag zuerst speichern.');return}window.open('/print?id='+id,'_blank')}async function importExcel(){if(!confirm('Die mitgelieferte Excel-Datei 2026 importieren? Bereits vorhandene Daten können doppelt erscheinen.'))return;try{let r=await api('/api/import');alert(r.count+' belegte Excel-Zeilen importiert.');load();await loadCustomers()}catch(e){alert(e.message)}}
 function selectedPrint(){return [...document.querySelectorAll('#printchecks input:checked')].map(x=>x.name)}
 function printUrl(){let id=+q('#f').elements.id.value;return '/print?id='+id+'&include='+encodeURIComponent(selectedPrint().join(','))+'&t='+Date.now()}
-function applyPrintProfile(){let proc=q('#f').elements.process.value,p=PROCESS_PROFILES[proc]||PROCESS_PROFILES.Zulassung;document.querySelectorAll('#printchecks label').forEach(l=>{let i=l.querySelector('input');if(!i)return;let hide=(i.name==='bank'||i.name==='sepa')&&!p.bank;l.style.display=hide?'none':'';if(hide)i.checked=false})}
+function applyPrintProfile(){let proc=q('#f').elements.process.value,p=PROCESS_PROFILES[proc]||{bank:0,evb:0,safety:0,req:[],cond:[]};document.querySelectorAll('#printchecks label').forEach(l=>{let i=l.querySelector('input');if(!i)return;let hide=(i.name==='bank'||i.name==='sepa')&&!p.bank;l.style.display=hide?'none':'';if(hide)i.checked=false})}
 async function openPrintCenter(){let id=+q('#f').elements.id.value;if(!id){alert('Bitte Auftrag zuerst speichern.');return}try{await saveCurrentSilently();show('printview');applyPrintProfile();updatePrintPreview()}catch(e){alert('Druckvorschau konnte nicht vorbereitet werden: '+e.message)}}
 async function updatePrintPreview(){try{await saveCurrentSilently();q('#printPreview').src=printUrl()}catch(e){alert('Vorschau konnte nicht aktualisiert werden: '+e.message)}}
 async function openPrintWindow(){try{await saveCurrentSilently();window.open(printUrl(),'_blank')}catch(e){alert('Druckdatei konnte nicht erstellt werden: '+e.message)}}
 
 function searchAuthority(kind,inputId){let a=(q('#'+inputId).value||'').trim();if(!a){alert('Bitte Stadt oder Landkreis eingeben.');return}let term=kind==='abmeldung'?'i-Kfz Online-Abmeldung':kind==='termin'?'Straßenverkehrsamt Termin online buchen':kind==='auskunft'?'Online-Auskunft Fahrzeugbrief Zulassungsbescheinigung Teil II':'Wunschkennzeichen Kennzeichenreservierung';openExternal('https://www.google.com/search?q='+encodeURIComponent(a+' '+term+' offizielle Seite'))}
 
+// Spreadsheet interaction layer. Uses the existing order API, not an Excel file.
+let dayGridQueue=Promise.resolve(),dayGridPending=0,dayGridRefresh=false;
+function gridMessage(text,error=false){
+  let el=q('#dayGridStatus');if(el){el.textContent=text;el.style.color=error?'var(--danger)':'var(--success)'}
+}
+function gridRows(table){return [...table.querySelectorAll('tbody tr[data-jobid]')]}
+function gridCells(row){return [...row.querySelectorAll('.dashCell')]}
+function parseGridClipboard(text){
+  let rows=[],row=[],value='',quoted=false;
+  for(let i=0;i<text.length;i++){
+    let c=text[i];
+    if(c==='"'&&(quoted||value==='')){
+      if(quoted&&text[i+1]==='"'){value+='"';i++}else quoted=!quoted;
+    }else if(!quoted&&(c==='\t'||c==='\n'||c==='\r')){
+      row.push(value);value='';
+      if(c!=='\t'){rows.push(row);row=[];if(c==='\r'&&text[i+1]==='\n')i++}
+    }else value+=c;
+  }
+  if(quoted)throw Error('Unvollständige Anführungszeichen in den kopierten Daten.');
+  if(value!==''||row.length) {row.push(value);rows.push(row)}
+  return rows;
+}
+function gridSaveRow(row,patch){
+  dayGridPending++;gridMessage('Wird gespeichert …');
+  const run=dayGridQueue.then(async()=>{
+    const id=+row.dataset.jobid,old=jobs.find(j=>+j.id===id);
+    if(id&&!old)throw Error('Auftrag nicht mehr verfügbar. Bitte aktualisieren.');
+    if(!id&&!Object.values(patch).some(v=>String(v).trim()))return;
+    const requested=row.dataset.date,data={...(old||{}),stva_date:old?.stva_date||requested,...patch};
+    delete data._slotLabel;
+    const result=await api('/api/save',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
+    const savedId=id||+result.id;
+    if(!savedId)throw Error('Keine Auftragsnummer zurückgegeben. Bitte aktualisieren, bevor Sie erneut speichern.');
+    const saved={...data,id:savedId,stva_date:result.stva_date||data.stva_date};
+    if(old)Object.assign(old,saved);else {jobs.push(saved);dayGridRefresh=true}
+    row.dataset.jobid=savedId;row.dataset.date=saved.stva_date;row.dataset.status=saved.status||'';
+    if(saved.stva_date!==requested){
+      dayGridRefresh=true;
+      alert('Der Auftrag wurde wegen der Tagesplanung auf '+fmt(saved.stva_date)+' gelegt.');
+    }
+    // A two-slot order has two visible rows but only one stored record.
+    document.querySelectorAll('#todayTable tr[data-jobid="'+savedId+'"] .dashCell').forEach(el=>{
+      if(el!==document.activeElement&&Object.hasOwn(patch,el.dataset.field))el.value=patch[el.dataset.field];
+    });
+  });
+  dayGridQueue=run.catch(()=>{}).finally(()=>{
+    dayGridPending--;
+    gridRefreshWhenIdle();
+  });
+  return run;
+}
+function gridCommit(el){
+  const row=el.closest('tr'),field=el.dataset.field,value=el.value;
+  gridSaveRow(row,{[field]:value}).then(()=>gridMessage('Gespeichert')).catch(e=>{
+    const old=jobs.find(j=>+j.id===+row.dataset.jobid);
+    el.value=old?.[field]||'';gridMessage('Nicht gespeichert: '+e.message,true);alert('Speichern fehlgeschlagen: '+e.message);
+  });
+}
+function initDayGrid(){
+  const root=q('#todayTable');
+  root.onfocusout=()=>setTimeout(gridRefreshWhenIdle,0);
+  if(!q('#dayGridHelp'))root.insertAdjacentHTML('beforebegin','<div id="dayGridHelp" class="dayGridHelp"><b>Tabelle bearbeiten</b><span>Tab / Pfeile: Zelle wechseln · F2: Text bearbeiten · Enter: nächste Zeile · Strg+V: Excel-Bereich einfügen</span><span id="dayGridStatus" role="status" aria-live="polite">Bereit</span></div>');
+  root.querySelectorAll('table').forEach(table=>{
+    table.classList.add('daySpreadsheet');
+    table.querySelectorAll('thead th').forEach((th,i)=>{
+      if(i>0&&i<7)th.insertAdjacentHTML('afterbegin','<small class="gridLetter">'+String.fromCharCode(64+i)+'</small>');
+    });
+    gridRows(table).forEach((row,r)=>gridCells(row).forEach((el,c)=>{
+      el.removeAttribute('onchange');el.onchange=()=>gridCommit(el);
+      el.setAttribute('aria-label',row.dataset.date+' · Zeile '+(r+1)+' · '+table.querySelectorAll('th')[c+1].textContent);
+      if(el.tagName==='SELECT'&&!el.querySelector('option[value=""]'))el.insertAdjacentHTML('afterbegin','<option value=""></option>');
+      if(!+row.dataset.jobid&&el.dataset.field==='status')el.value='';
+      el.onfocus=()=>{el.dataset.editing='0';if(el.select)el.select()};
+      el.ondblclick=()=>{el.dataset.editing='1'};
+      el.onkeydown=e=>{
+        if(e.isComposing||e.ctrlKey||e.metaKey||e.altKey)return;
+        if(e.key==='F2'){e.preventDefault();el.dataset.editing='1';return}
+        if(e.key==='Escape'){e.preventDefault();el.dataset.editing='0';el.blur();return}
+        const rows=gridRows(table),ri=rows.indexOf(row),cells=gridCells(row),ci=cells.indexOf(el);
+        let nr=ri,nc=ci;
+        if(e.key==='Tab'){nc+=e.shiftKey?-1:1;if(nc<0){nr--;nc=5}if(nc>5){nr++;nc=0}}
+        else if(e.key==='Enter'){nr+=e.shiftKey?-1:1}
+        else if(el.dataset.editing!=='1'&&e.key.startsWith('Arrow')){
+          if(e.key==='ArrowUp')nr--;if(e.key==='ArrowDown')nr++;if(e.key==='ArrowLeft')nc--;if(e.key==='ArrowRight')nc++;
+        }else return;
+        const target=rows[nr]&&gridCells(rows[nr])[nc];
+        if(target){e.preventDefault();target.focus()}
+        else if(e.key!=='Tab')e.preventDefault();
+      };
+      el.onpaste=async e=>{
+        const text=e.clipboardData?.getData('text/plain');
+        if(!text||(!/[\t\r\n]/.test(text)&&el.tagName!=='SELECT'))return;
+        e.preventDefault();
+        if(dayGridPending){alert('Bitte warten, bis die aktuelle Änderung gespeichert ist.');return}
+        try{
+          const matrix=parseGridClipboard(text),rows=gridRows(table),start=rows.indexOf(row),col=gridCells(row).indexOf(el);
+          if(start+matrix.length>rows.length||matrix.some(x=>col+x.length>6))throw Error('Der Bereich passt nicht in diesen Tag. Es wurde nichts eingefügt.');
+          const changes=matrix.map((values,i)=>{
+            const tr=rows[start+i],cells=gridCells(tr),patch={};
+            values.forEach((v,j)=>{
+              const target=cells[col+j];
+              if(target.tagName==='SELECT'&&![...target.options].some(o=>o.value===v))throw Error('Ungültiger Wert "'+v+'" für '+target.dataset.field+'. Es wurde nichts eingefügt.');
+              patch[target.dataset.field]=v;
+            });return {tr,patch};
+          });
+          const ids=changes.map(x=>+x.tr.dataset.jobid).filter(Boolean);
+          if(new Set(ids).size!==ids.length)throw Error('Der Bereich enthält denselben Zwei-Platz-Auftrag mehrfach. Bitte diesen Auftrag nur einmal bearbeiten.');
+          if(!confirm(matrix.length+' Zeile(n) ab der ausgewählten Zelle einfügen und speichern? Vorhandene Zellwerte werden ersetzt.'))return;
+          // Hold rendering until the whole batch finishes, including new orders.
+          dayGridPending++;
+          let saved=0;
+          try{
+            for(const change of changes){
+              await gridSaveRow(change.tr,change.patch);saved++;
+              gridCells(change.tr).forEach(cell=>{if(Object.hasOwn(change.patch,cell.dataset.field))cell.value=change.patch[cell.dataset.field]});
+            }
+            gridMessage(saved+' Zeile(n) gespeichert');
+          }catch(err){throw Error(saved+' Zeile(n) gespeichert; weitere Zeilen nicht übernommen. '+err.message)}
+          finally{dayGridPending--;gridRefreshWhenIdle()}
+        }catch(err){gridMessage(err.message,true);alert(err.message)}
+      };
+    }));
+  });
+}
+function gridRefreshWhenIdle(){
+  if(!dayGridPending&&dayGridRefresh&&!q('#todayTable').contains(document.activeElement)){
+    dayGridRefresh=false;renderDash();
+  }
+}
+window.addEventListener('beforeunload',e=>{if(dayGridPending){e.preventDefault();e.returnValue=''}});
 loadAppSettings().then(load);

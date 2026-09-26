@@ -376,3 +376,642 @@ body *{visibility:hidden}
 #printTagesliste{position:absolute;top:0;left:0;width:100%;padding:20px}
 #printTagesliste .matrixDayMeta{font-size:16px;font-weight:700;margin-bottom:14px}
 }
+
+
+/* ===== SERVICE POINT: Kundenannahme compact / no-scroll ===== */
+#intake .wizardcard{
+  overflow:hidden!important;
+  min-height:0!important;
+}
+#intake .processGrid{
+  display:grid!important;
+  grid-template-columns:repeat(3,minmax(0,1fr))!important;
+  grid-auto-rows:minmax(34px,auto)!important;
+  flex:none!important;
+  height:auto!important;
+  min-height:0!important;
+  align-content:start!important;
+  gap:4px 8px!important;
+  margin:4px 0 6px!important;
+}
+#intake .processGrid .choice{
+  width:100%!important;
+  min-width:0!important;
+  min-height:34px!important;
+  height:auto!important;
+  padding:4px 8px!important;
+  line-height:1.15!important;
+  white-space:normal!important;
+  overflow:visible!important;
+}
+#intake .transferBox,
+#intake .wizardfoot{flex:none!important}
+@media(max-width:1050px){
+  #intake .processGrid{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+}
+
+/* ===== SERVICE POINT: Dark Mode ===== */
+:root[data-color-mode="dark"]{
+  --bg:#0f141b;
+  --panel:#171d26;
+  --panel-2:#1d2530;
+  --panel-3:#252e3a;
+  --border:#2d3744;
+  --border-strong:#435064;
+  --text:#eef3f8;
+  --text-2:#c1cad6;
+  --text-muted:#8f9bad;
+  --accent-weak:#183653;
+  --success:#4bc486;
+  --success-bg:#173b2a;
+  --warning:#e0ad49;
+  --warning-bg:#443517;
+  --danger:#ff7168;
+  --danger-bg:#482522;
+  --violet:#b58af0;
+  --violet-bg:#34254a;
+  --teal:#55c8d2;
+  --teal-bg:#17383c;
+  --shadow-card:0 1px 2px rgba(0,0,0,.45),0 1px 0 rgba(255,255,255,.02);
+  color-scheme:dark;
+}
+:root[data-color-mode="dark"] input,
+:root[data-color-mode="dark"] select,
+:root[data-color-mode="dark"] textarea{
+  background:#111821;
+  color:var(--text);
+  border-color:var(--border-strong);
+}
+:root[data-color-mode="dark"] input::placeholder,
+:root[data-color-mode="dark"] textarea::placeholder{color:#718096}
+:root[data-color-mode="dark"] .btn{
+  background:var(--panel-2);
+  color:var(--text);
+  border-color:var(--border-strong);
+}
+:root[data-color-mode="dark"] .btn:hover{background:var(--panel-3)}
+:root[data-color-mode="dark"] table,
+:root[data-color-mode="dark"] th,
+:root[data-color-mode="dark"] td{border-color:var(--border)}
+:root[data-color-mode="dark"] th{
+  background:var(--panel-2);
+  color:var(--text-2);
+}
+.themeModeSwitch{
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+  margin:10px 0 14px;
+}
+.themeModeBtn{min-width:110px}
+.themeModeBtn.active{
+  background:var(--accent)!important;
+  border-color:var(--accent)!important;
+  color:#fff!important;
+}
+
+/* ===== Dark Mode: improve dark radio logos ===== */
+:root[data-color-mode="dark"] #radioLink1live,
+:root[data-color-mode="dark"] #radioLinkswr3{
+  background:#f3f5f8;
+  border:1px solid #d7dde5;
+  padding:3px 8px;
+  border-radius:6px;
+}
+:root[data-color-mode="dark"] #radioLink1live img,
+:root[data-color-mode="dark"] #radioLinkswr3 img{
+  opacity:1;
+  filter:none;
+}
+:root[data-color-mode="dark"] #radioLink1live:hover,
+:root[data-color-mode="dark"] #radioLinkswr3:hover{
+  background:#ffffff;
+}
+:root[data-color-mode="dark"] #radioLink1live.playing,
+:root[data-color-mode="dark"] #radioLinkswr3.playing{
+  background:#e7f5ec;
+  border-color:#4bc486;
+}
+
+/* ===== Sidebar compact / no-scroll v7 =====
+   Fit the complete work navigation into common 1080p / DPI-scaled office screens.
+*/
+.sideNav{
+  overflow-y:hidden!important;
+  gap:1px!important;
+  padding:6px 12px 6px!important;
+}
+.navGroupLabel{
+  font-size:10px!important;
+  padding:7px 9px 2px!important;
+  line-height:1!important;
+}
+.navGroupLabel:first-child{padding-top:0!important}
+.sideNav button{
+  gap:8px!important;
+  padding:4px 8px!important;
+  border-radius:7px!important;
+  min-height:0!important;
+}
+.sideNav button b{
+  font-size:12.5px!important;
+  line-height:1.05!important;
+}
+.sideNav .navSub{
+  font-size:9px!important;
+  line-height:1.05!important;
+  margin-top:1px!important;
+}
+.navIcon,
+img.navIcon,
+.navIcon.badge{
+  width:19px!important;
+  height:19px!important;
+  font-size:14px!important;
+}
+.navIcon.badge svg{
+  width:13px!important;
+  height:13px!important;
+}
+.navBottom{
+  margin-top:auto!important;
+  padding-top:5px!important;
+}
+@media(max-height:900px){
+  :root{--header-h:70px}
+  .sideIdentity{padding:0 14px!important}
+  .sideIdentity img{max-height:48px!important;max-width:190px!important}
+  .sideNav{padding-top:4px!important;padding-bottom:4px!important}
+  .navGroupLabel{padding-top:5px!important}
+  .sideNav button{padding-top:3px!important;padding-bottom:3px!important}
+}
+
+/* ===== Sidebar balanced size v8 ===== */
+.sideNav{
+  overflow-y:hidden!important;
+  gap:2px!important;
+  padding:8px 14px 7px!important;
+}
+.navGroupLabel{
+  font-size:11.5px!important;
+  padding:10px 10px 3px!important;
+  line-height:1.05!important;
+}
+.navGroupLabel:first-child{padding-top:1px!important}
+.sideNav button{
+  gap:10px!important;
+  padding:5px 9px!important;
+  border-radius:8px!important;
+}
+.sideNav button b{
+  font-size:14px!important;
+  line-height:1.1!important;
+}
+.sideNav .navSub{
+  font-size:10.25px!important;
+  line-height:1.1!important;
+  margin-top:1px!important;
+}
+.navIcon,
+img.navIcon,
+.navIcon.badge{
+  width:21px!important;
+  height:21px!important;
+  font-size:15px!important;
+}
+.navIcon.badge svg{
+  width:14px!important;
+  height:14px!important;
+}
+.navBottom{
+  margin-top:auto!important;
+  padding-top:7px!important;
+}
+@media(max-height:900px){
+  :root{--header-h:76px}
+  .sideIdentity{padding:0 16px!important}
+  .sideIdentity img{max-height:54px!important;max-width:210px!important}
+  .sideNav{padding-top:6px!important;padding-bottom:5px!important}
+  .navGroupLabel{padding-top:8px!important}
+  .sideNav button{padding-top:4px!important;padding-bottom:4px!important}
+}
+
+/* ===== Sidebar vertical distribution v9 =====
+   Keep the v8 font/icon sizes, but use the free height between menu groups.
+*/
+.sideNav{
+  padding-top:8px!important;
+  padding-bottom:7px!important;
+}
+.sideNav .navGroupLabel{
+  margin-top:9px!important;
+  padding-top:5px!important;
+}
+.sideNav .navGroupLabel:first-child{
+  margin-top:0!important;
+  padding-top:1px!important;
+}
+/* Slightly more separation before the major sections on normal office screens */
+@media(min-height:780px){
+  .sideNav .navGroupLabel{
+    margin-top:14px!important;
+  }
+  .sideNav .navGroupLabel:first-child{
+    margin-top:0!important;
+  }
+}
+@media(min-height:900px){
+  .sideNav .navGroupLabel{
+    margin-top:18px!important;
+  }
+  .sideNav .navGroupLabel:first-child{
+    margin-top:0!important;
+  }
+}
+/* Settings stays at the bottom, so the whole sidebar height is visually used. */
+.navBottom{
+  margin-top:auto!important;
+}
+
+/* ===== Radio logos v10: clean white treatment in dark mode ===== */
+:root[data-color-mode="dark"] #radioLink1live,
+:root[data-color-mode="dark"] #radioLinkswr3,
+:root[data-color-mode="dark"] #radioLinkjamfm{
+  background:transparent!important;
+  border-color:transparent!important;
+  padding:3px 7px!important;
+}
+:root[data-color-mode="dark"] #radioLink1live img,
+:root[data-color-mode="dark"] #radioLinkswr3 img,
+:root[data-color-mode="dark"] #radioLinkjamfm img{
+  opacity:1!important;
+  filter:grayscale(1) brightness(0) invert(1)!important;
+}
+:root[data-color-mode="dark"] #radioLink1live:hover,
+:root[data-color-mode="dark"] #radioLinkswr3:hover,
+:root[data-color-mode="dark"] #radioLinkjamfm:hover{
+  background:var(--panel-3)!important;
+}
+:root[data-color-mode="dark"] #radioLink1live.playing,
+:root[data-color-mode="dark"] #radioLinkswr3.playing,
+:root[data-color-mode="dark"] #radioLinkjamfm.playing{
+  background:var(--success-bg)!important;
+  border-color:transparent!important;
+}
+
+/* ===== Sidebar layout v11: spacious approved layout ===== */
+.sideNav{
+  overflow-y:hidden!important;
+  padding:8px 14px 7px!important;
+  gap:2px!important;
+}
+
+/* More visual breathing room between the named navigation groups. */
+.sideNav .navGroupLabel{
+  margin-top:18px!important;
+  padding:5px 10px 3px!important;
+}
+.sideNav .navGroupLabel:first-child{
+  margin-top:0!important;
+  padding-top:1px!important;
+}
+
+/* Keep the existing v8/v10 readable item sizes. */
+.sideNav button{
+  margin-top:1px!important;
+}
+
+/* Use the lower part of the sidebar naturally; settings remains anchored at bottom. */
+.navBottom{
+  margin-top:auto!important;
+  padding-top:10px!important;
+}
+
+/* On shorter effective viewports, reduce only group gaps enough to keep everything visible. */
+@media(max-height:900px){
+  .sideNav .navGroupLabel{
+    margin-top:13px!important;
+  }
+  .sideNav .navGroupLabel:first-child{
+    margin-top:0!important;
+  }
+}
+@media(max-height:800px){
+  .sideNav .navGroupLabel{
+    margin-top:9px!important;
+  }
+  .sideNav .navGroupLabel:first-child{
+    margin-top:0!important;
+  }
+}
+
+/* ===== Tagesliste v12: alle Aktionsbuttons sichtbar ===== */
+.matrixTodayScroll{
+  overflow-x:hidden!important;
+}
+.matrixTodayTable{
+  width:100%!important;
+  min-width:0!important;
+  table-layout:fixed!important;
+}
+.matrixTodayTable th,
+.matrixTodayTable td{
+  min-width:0!important;
+  padding-left:5px!important;
+  padding-right:5px!important;
+  overflow:hidden;
+}
+
+/* 9 columns: Nr, Kunde, Vorgang, Kennzeichen, Mobil, Status, Rückfrage, Rechnung, Nachricht */
+.matrixTodayTable th:nth-child(1),.matrixTodayTable td:nth-child(1){width:7%!important}
+.matrixTodayTable th:nth-child(2),.matrixTodayTable td:nth-child(2){width:17%!important}
+.matrixTodayTable th:nth-child(3),.matrixTodayTable td:nth-child(3){width:15%!important}
+.matrixTodayTable th:nth-child(4),.matrixTodayTable td:nth-child(4){width:10%!important}
+.matrixTodayTable th:nth-child(5),.matrixTodayTable td:nth-child(5){width:11%!important}
+.matrixTodayTable th:nth-child(6),.matrixTodayTable td:nth-child(6){width:11%!important}
+.matrixTodayTable th:nth-child(7),.matrixTodayTable td:nth-child(7){width:11%!important}
+.matrixTodayTable th:nth-child(8),.matrixTodayTable td:nth-child(8){width:7%!important;text-align:center}
+.matrixTodayTable th:nth-child(9),.matrixTodayTable td:nth-child(9){width:11%!important;text-align:center;white-space:nowrap!important}
+
+.matrixTodayTable .dashCell{
+  min-width:0!important;
+  width:100%!important;
+  padding-left:3px!important;
+  padding-right:3px!important;
+}
+.matrixTodayTable .dashOpenBtn{
+  width:24px!important;
+  height:24px!important;
+  min-width:24px!important;
+  padding:0!important;
+}
+.matrixTodayTable .dashOpenBtn.waBtn,
+.matrixTodayTable .dashOpenBtn.smsBtn{
+  margin-left:2px!important;
+  width:24px!important;
+  height:24px!important;
+}
+.matrixTodayTable .dashOpenBtn.waBtn img{
+  width:15px!important;
+  height:15px!important;
+}
+
+/* On narrower effective DPI widths, preserve actions by trimming non-action columns slightly. */
+@media(max-width:1450px){
+  .matrixTodayTable{font-size:11px!important}
+  .matrixTodayTable th,.matrixTodayTable td{padding-left:3px!important;padding-right:3px!important}
+  .matrixTodayTable th:nth-child(2),.matrixTodayTable td:nth-child(2){width:16%!important}
+  .matrixTodayTable th:nth-child(3),.matrixTodayTable td:nth-child(3){width:14%!important}
+  .matrixTodayTable th:nth-child(7),.matrixTodayTable td:nth-child(7){width:10%!important}
+  .matrixTodayTable th:nth-child(9),.matrixTodayTable td:nth-child(9){width:14%!important}
+}
+
+/* ===== Tagesliste v13: action visibility ===== */
+.matrixTodayTable td:nth-child(8),
+.matrixTodayTable td:nth-child(9){
+  overflow:visible!important;
+}
+.matrixTodayTable td:nth-child(9){
+  white-space:nowrap!important;
+}
+.matrixTodayTable .actionEmpty{
+  color:var(--text-muted);
+  opacity:.55;
+  display:inline-block;
+  min-width:18px;
+  text-align:center;
+}
+.matrixTodayTable .dashOpenBtn.waBtn,
+.matrixTodayTable .dashOpenBtn.smsBtn{
+  display:inline-flex!important;
+  visibility:visible!important;
+  opacity:1!important;
+}
+
+/* ===== v16: Kundenannahme – alle Wizard-Schritte höhenoptimiert =====
+   Ziel: Schritte 1–6 passen auf typische 1080p/DPI-skalierte Bürobildschirme.
+   Scrollen bleibt nur als Sicherheits-Fallback bei zusätzlichen OCR-/Sonderinhalten.
+*/
+#intake > .panel{
+  padding:10px 14px!important;
+}
+#intake .daybar{
+  margin-bottom:4px!important;
+}
+#intake .daybar h2{
+  font-size:16px!important;
+}
+#intake .daybar .muted{
+  font-size:11px!important;
+}
+#intakeProcessBadge{
+  font-size:16px!important;
+}
+#intake .steps{
+  gap:4px!important;
+  margin-bottom:6px!important;
+}
+#intake .stepchip{
+  font-size:10px!important;
+  padding:4px 8px!important;
+}
+
+#intake .wizardcard{
+  padding:10px 14px!important;
+  overflow-y:auto!important;
+  overflow-x:hidden!important;
+  scrollbar-width:thin;
+}
+#intake .wizardcard h3{
+  font-size:15px!important;
+  line-height:1.15!important;
+  margin:0 0 4px!important;
+}
+#intake .wizardcard > p{
+  font-size:12.5px!important;
+  line-height:1.25!important;
+  margin:0 0 5px!important;
+}
+#intake .wizardcard .bigchoice{
+  gap:4px!important;
+  margin:4px 0!important;
+}
+#intake .wizardcard .bigchoice .choice{
+  min-height:36px!important;
+  padding:5px 10px!important;
+  font-size:13px!important;
+  border-radius:8px!important;
+}
+#intake .wizardcard .infobox,
+#intake .wizardcard .warnbox,
+#intake .wizardcard .okbox,
+#intake .wizardcard .requirementHint{
+  font-size:11.5px!important;
+  line-height:1.25!important;
+  padding:7px 10px!important;
+  margin:5px 0!important;
+}
+#intake .wizardcard .actions{
+  gap:6px!important;
+  margin-top:5px!important;
+  padding-top:0!important;
+}
+#intake .wizardcard .btn{
+  min-height:30px!important;
+  height:30px!important;
+  padding:0 10px!important;
+  font-size:11.5px!important;
+}
+#intake .wizardcard .ocrAction{
+  margin-top:6px!important;
+}
+#intake .wizardcard .checkline{
+  font-size:12px!important;
+  line-height:1.2!important;
+  gap:7px!important;
+  padding:4px 0!important;
+}
+#intake .wizardcard .checkline input{
+  width:16px!important;
+  height:16px!important;
+}
+#intake .wizardcard label{
+  font-size:11.5px!important;
+}
+#intake .wizardcard label input,
+#intake .wizardcard label select{
+  height:31px!important;
+  font-size:12px!important;
+  padding:4px 7px!important;
+}
+#intake .wizardcard .grid{
+  gap:6px 10px!important;
+}
+#intake .wizardcard .subPanel{
+  padding:8px 10px!important;
+  margin:5px 0!important;
+}
+#intake .wizardcard .taxModeTitle{
+  margin:7px 0 4px!important;
+  font-size:12px!important;
+}
+#intake .wizardcard .taxModeGrid{
+  gap:6px!important;
+  margin-bottom:5px!important;
+}
+#intake .wizardcard .taxMode{
+  min-height:42px!important;
+  padding:6px 9px!important;
+}
+#intake .wizardcard .taxMode small{
+  font-size:10px!important;
+}
+#intake .wizardcard .summarygrid{
+  gap:5px!important;
+}
+#intake .wizardcard .summaryitem{
+  padding:6px 8px!important;
+  font-size:11.5px!important;
+}
+#intake .wizardcard .wizardfoot{
+  margin-top:auto!important;
+  padding-top:6px!important;
+  min-height:37px!important;
+}
+
+/* Inline margins in the generated wizard HTML need compact overrides. */
+#intake .wizardcard h3[style*="margin-top:22px"]{
+  margin-top:8px!important;
+}
+#intake .wizardcard .infobox[style*="margin-top:12px"]{
+  margin-top:5px!important;
+}
+#intake .wizardcard .bigchoice[style*="margin-top:14px"]{
+  margin-top:5px!important;
+}
+#intake .wizardcard .scanbtn[style*="margin-top:10px"]{
+  margin-top:5px!important;
+}
+
+/* Step 1 remains compact but readable. */
+#intake .processGrid{
+  gap:4px 7px!important;
+  margin:3px 0 5px!important;
+}
+#intake .processGrid .choice{
+  min-height:31px!important;
+  padding:3px 7px!important;
+  font-size:12px!important;
+}
+
+/* Extra compaction on short effective viewports caused by browser chrome / Windows scaling. */
+@media(max-height:820px){
+  #intake > .panel{padding:7px 10px!important}
+  #intake .daybar{margin-bottom:2px!important}
+  #intake .steps{margin-bottom:4px!important}
+  #intake .stepchip{padding:3px 7px!important;font-size:9.5px!important}
+  #intake .wizardcard{padding:8px 11px!important}
+  #intake .wizardcard .bigchoice .choice{min-height:32px!important;padding:4px 8px!important}
+  #intake .wizardcard .btn{height:28px!important;min-height:28px!important}
+  #intake .wizardcard .infobox,
+  #intake .wizardcard .warnbox,
+  #intake .wizardcard .okbox,
+  #intake .wizardcard .requirementHint{padding:6px 8px!important}
+}
+
+/* ===== v17: Schritt 2 Identität – übersichtliche 2-Spalten-Ansicht ===== */
+#intake .identityGrid{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(280px,.85fr);gap:10px;flex:1;min-height:0;align-items:stretch}
+#intake .identitySection{min-width:0;background:var(--panel-2);border:1px solid var(--border);border-radius:10px;padding:10px 12px;display:flex;flex-direction:column;gap:7px}
+#intake .identitySectionHead{display:flex;align-items:flex-start;gap:9px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+#intake .identitySectionHead h3{margin:0!important;font-size:14px!important}
+#intake .identitySectionHead p{margin:2px 0 0!important;font-size:10.5px!important;color:var(--text-muted)}
+#intake .identityStepNo{width:24px;height:24px;flex:0 0 24px;display:inline-flex;align-items:center;justify-content:center;border-radius:50%;background:var(--accent);color:#fff;font-size:11px;font-weight:700}
+#intake .identityChoiceRow{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+#intake .identityChoiceRow .choice{min-height:38px!important;padding:5px 9px!important;font-size:12px!important;justify-content:center;text-align:center}
+#intake .identityHint{padding:6px 8px;border-radius:7px;background:var(--accent-weak);color:var(--accent-strong);font-size:10.5px;line-height:1.25}
+#intake .identityActions{display:flex;gap:6px;flex-wrap:wrap}
+#intake .identityActions .btn{flex:1 1 145px}
+#intake .identityExtraBox{display:flex;flex-direction:column;gap:6px;padding:8px;border:1px dashed var(--border-strong);border-radius:8px;background:var(--panel)}
+#intake .identityDone{padding:9px 10px;border-radius:8px;background:var(--success-bg);color:var(--success);font-size:11.5px;font-weight:600}
+#intake .identityOcrArea{min-height:0;overflow:auto}
+#intake .identityOcrArea:empty{display:none}
+#intake .identityOcrArea .ocrReviewGrid{gap:5px 8px!important}
+#intake .identityOcrArea .ocrReviewGrid input{height:28px!important}
+#intake .identityOcrArea details{margin-top:5px!important}
+#intake .identityGrid + .wizardfoot{margin-top:7px!important}
+@media(max-width:1150px){#intake .identityGrid{grid-template-columns:1fr}#intake .identitySection{padding:8px 10px}}
+@media(max-height:820px){#intake .identitySection{gap:5px;padding:7px 9px}#intake .identitySectionHead{padding-bottom:4px}#intake .identityChoiceRow .choice{min-height:32px!important}#intake .identityHint{padding:5px 7px}}
+
+/* 3-Tage-Ansicht Arbeitszentrale */
+.dashThreeDayBlock{margin-bottom:18px;border-bottom:1px solid var(--border)}
+.dashThreeDayBlock:last-child{margin-bottom:0;border-bottom:0}
+.dashThreeDayBlock .dayhead{position:sticky;top:0;z-index:3;background:var(--panel)}
+/* Day spreadsheet follows the application's light/dark appearance. */
+@media screen {
+  :root { --grid-surface:#f5f7f9;--grid-stripe:#eef2f5;--grid-header:#e5eaef;--grid-line:#d5dde5;--grid-ink:#293746;--grid-focus:#267451;--grid-active:#e4f0e9;--grid-buffer:#f4efe3; }
+  :root[data-color-mode="dark"] { --grid-surface:#1b232e;--grid-stripe:#202a36;--grid-header:#293544;--grid-line:#344152;--grid-ink:#d5dee8;--grid-focus:#72c69a;--grid-active:#253e38;--grid-buffer:#302e26; }
+  #todayTable .matrixTodayScroll { overflow-x:auto!important; }
+  #todayTable .daySpreadsheet { min-width:1100px!important;border-collapse:collapse!important;background:var(--grid-surface)!important;color:var(--grid-ink)!important;color-scheme:light; }
+  :root[data-color-mode="dark"] #todayTable .daySpreadsheet {color-scheme:dark}
+  #todayTable .daySpreadsheet th,#todayTable .daySpreadsheet td { border:1px solid var(--grid-line)!important;border-radius:0!important; }
+  #todayTable .daySpreadsheet th { background:var(--grid-header)!important;color:var(--grid-ink)!important;position:sticky;top:0;z-index:1;padding:4px 5px!important;line-height:18px; }
+  #todayTable .daySpreadsheet td { background:var(--grid-surface)!important;color:var(--grid-ink)!important;padding:0!important;height:28px!important; }
+  #todayTable .daySpreadsheet tbody tr:nth-child(even) td {background:var(--grid-stripe)!important}
+  #todayTable .daySpreadsheet .matrixBuffer td { background:var(--grid-buffer)!important; }
+  #todayTable .daySpreadsheet tbody tr:hover td {background:var(--grid-header)!important}
+  #todayTable .daySpreadsheet td:first-child { background:var(--grid-header)!important;text-align:center;padding:1px 3px!important; }
+  #todayTable .daySpreadsheet .dashCell { box-sizing:border-box;width:100%!important;min-height:28px!important;height:28px!important;padding:3px 6px!important;margin:0!important;border:0!important;border-radius:0!important;box-shadow:none!important;background:transparent!important;color:var(--grid-ink)!important;font:13px "Segoe UI",Arial,sans-serif!important; }
+  #todayTable .daySpreadsheet .dashCell option {background:var(--grid-surface);color:var(--grid-ink)}
+  #todayTable .daySpreadsheet .dashCell::placeholder {color:var(--text-2);opacity:.8}
+  #todayTable .daySpreadsheet tbody tr td:focus-within { outline:2px solid var(--grid-focus);outline-offset:-2px;background:var(--grid-active)!important; }
+  #todayTable .daySpreadsheet .dashCell:focus { outline:none!important; }
+  #todayTable .daySpreadsheet .gridLetter { display:inline;font-size:10px;color:var(--text-2);margin-right:5px; }
+  .dayGridHelp { display:flex;gap:6px 10px;align-items:center;flex-wrap:wrap;background:var(--grid-stripe);color:var(--grid-ink);border:1px solid var(--grid-line);border-radius:6px;padding:5px 9px;font-size:12px;margin-bottom:5px; }
+  #todayTable .dashThreeDayBlock {margin-bottom:10px}
+  #todayTable .dashThreeDayBlock .dayhead {padding:5px 9px!important;line-height:20px}
+  #dash .matrixTodayPanel {padding:10px}
+  #dash .matrixDayMeta {margin-bottom:5px}
+  #dash .matrixDashActions {margin-top:8px}
+  #dayGridStatus { margin-left:auto;font-weight:600; }
+}
+@media print { .dayGridHelp,.gridLetter {display:none!important} }
