@@ -1015,3 +1015,10 @@ img.navIcon,
   #dayGridStatus { margin-left:auto;font-weight:600; }
 }
 @media print { .dayGridHelp,.gridLetter {display:none!important} }
+/* Website-Vormerkungen: Hinweis bei neuen Online-Vormerkungen */
+.webToast{position:fixed;right:18px;bottom:18px;z-index:9999;max-width:400px;background:var(--panel);color:inherit;border:1px solid var(--border);border-left:4px solid #1E8A5A;border-radius:12px;box-shadow:0 12px 30px rgba(0,0,0,.25);padding:14px 16px;display:grid;gap:6px;font-size:14px}
+.webToast.hidden{display:none}
+.webToast .actions{margin-top:6px}
+.webToastRow{display:grid;grid-template-columns:1fr auto auto;gap:6px;align-items:center;padding:4px 0;border-top:1px solid var(--border)}
+.webToastRow .btn{padding:4px 10px;font-size:12px}
+.webToastWarn{color:#C0392B;font-weight:600}

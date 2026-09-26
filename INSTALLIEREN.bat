@@ -1,7 +1,7 @@
 @echo off
 cd /d "%~dp0"
 echo Installiere benoetigte Python-Komponenten...
-py -m pip install pypdf reportlab pillow pytesseract pywin32 2>nul || python -m pip install pypdf reportlab pillow pytesseract pywin32
+py -m pip install pypdf reportlab pillow pytesseract pywin32 cryptography 2>nul || python -m pip install pypdf reportlab pillow pytesseract pywin32 cryptography
 where tesseract >nul 2>nul
 if errorlevel 1 (
   echo Tesseract OCR wird installiert, falls winget verfuegbar ist...

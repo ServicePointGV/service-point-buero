@@ -3,7 +3,7 @@ from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from datetime import datetime, timedelta, time as dtime
 from pathlib import Path
 
-VERSION='1.2.0'
+VERSION='1.3.0'
 BASE=Path(sys.executable).resolve().parent if getattr(sys,'frozen',False) else Path(__file__).resolve().parent
 # Produktivdaten liegen unter Windows ausserhalb des Versionsordners. So bleiben Auftraege,
 # Mitarbeiter, Notizen und Scans bei einem Update auf einen neuen ZIP-Ordner erhalten.
@@ -105,6 +105,14 @@ def db():
     c.execute('CREATE TABLE IF NOT EXISTS deleted_jobs (id INTEGER PRIMARY KEY, deleted_at TEXT, data TEXT)')
     c.execute('CREATE TABLE IF NOT EXISTS deleted_customers (id INTEGER PRIMARY KEY, deleted_at TEXT, data TEXT)')
     c.execute('CREATE TABLE IF NOT EXISTS customers (id INTEGER PRIMARY KEY AUTOINCREMENT, created TEXT, updated TEXT, customer TEXT, first_name TEXT, mobile TEXT, address TEXT, postal TEXT, city TEXT, notes TEXT)')
+    # Online-Vormerkungen von der Website: merkt sich jede uebernommene Vormerkungsnummer (gegen doppelte Auftraege)
+    c.execute('CREATE TABLE IF NOT EXISTS web_imports (nr TEXT PRIMARY KEY, job_id INTEGER, wunschtag TEXT, stva_date TEXT, imported TEXT, acked INTEGER NOT NULL DEFAULT 0)')
+    if 'bestaetigt' not in {r[1] for r in c.execute('PRAGMA table_info(web_imports)').fetchall()}:
+        c.execute("ALTER TABLE web_imports ADD COLUMN bestaetigt TEXT DEFAULT ''")
+    # Online ausgefuellte Vollmacht-/SEPA-Angaben: merkt sich jede uebernommene Einsendung (id von der Website)
+    c.execute('CREATE TABLE IF NOT EXISTS web_formulare (id TEXT PRIMARY KEY, nr TEXT, job_id INTEGER, imported TEXT, acked INTEGER NOT NULL DEFAULT 0, info TEXT, extra TEXT)')
+    if 'extra' not in {r[1] for r in c.execute('PRAGMA table_info(web_formulare)').fetchall()}:
+        c.execute("ALTER TABLE web_formulare ADD COLUMN extra TEXT")
     # V18.6: separate Steuerzahlerdaten fuer SEPA-/Steuerfaelle, update-sicher migriert.
     existing={r[1] for r in c.execute('PRAGMA table_info(jobs)').fetchall()}
     for col,sqltype,default in [('taxpayer_same_holder','TEXT','Ja'),('taxpayer_first_name','TEXT',''),('taxpayer_name','TEXT',''),('taxpayer_address','TEXT',''),('taxpayer_postal','TEXT',''),('taxpayer_city','TEXT',''),('account_holder_same_taxpayer','TEXT','Ja'),('sign_count','TEXT',''),('need_gbr','TEXT','Nein'),('need_kurzzeit','TEXT','Nein'),('need_ausland_kz','TEXT','Nein'),('need_erhalt','TEXT','Nein'),('final_price','TEXT',''),('landline','TEXT',''),('pickup_notified_at','TEXT',''),('fee_service','TEXT',''),('fee_signs','TEXT',''),('fee_stva','TEXT',''),('customer_type','TEXT','Privat'),('invoiced_at','TEXT','')]:
@@ -422,7 +430,8 @@ def apply_update(url):
     bat.write_text(
         '@echo off\r\n'
         'timeout /t 2 /nobreak >nul\r\n'
-        f'robocopy "{payload}" "{BASE}" /E /MIR /R:3 /W:1 >nul\r\n'
+        # /XF: das Deinstallationsprogramm des Installers (unins000.exe/.dat) nicht wegspiegeln
+        f'robocopy "{payload}" "{BASE}" /E /MIR /R:3 /W:1 /XF unins*.exe unins*.dat >nul\r\n'
         f'start "" "{exe}"\r\n'
         'del "%~f0"\r\n', encoding='utf-8')
     subprocess.Popen(['cmd','/c',str(bat)],creationflags=subprocess.CREATE_NO_WINDOW|subprocess.DETACHED_PROCESS,close_fds=True)
@@ -757,7 +766,7 @@ DEFAULT_PICKUP_MESSAGE=("Guten Tag,\n\nIhre Unterlagen liegen bei uns Fertig und
     "Die Gesamtkosten belaufen sich auf {price} €.\n\nUnsere Öffnungszeiten sind:\n\n"
     "Montag und Mittwochs von 07:30 bis 16:30\nDienstags und Donnerstags von 07:30 bis 15:30\nFreitags von 07:30 bis 13:00\n\n"
     "Mit freundlichen Grüßen \nZulassungsservice Grevenbroich")
-DEFAULT_APP_SETTINGS={'regular_slots':8,'buffer_slots':2,'pickup_message':DEFAULT_PICKUP_MESSAGE,'closed_dates':{},'enabled_radios':['1live','jamfm','bollerwagen','bigfm','swr3','wdr4','bob','sunshine'],'billbee_api_key':'','billbee_username':'','billbee_api_password':''}
+DEFAULT_APP_SETTINGS={'regular_slots':8,'buffer_slots':2,'pickup_message':DEFAULT_PICKUP_MESSAGE,'closed_dates':{},'enabled_radios':['1live','jamfm','bollerwagen','bigfm','swr3','wdr4','bob','sunshine'],'billbee_api_key':'','billbee_username':'','billbee_api_password':'','web_url':'','web_token':''}
 
 def _app_settings_file():
     return DATA/'app_settings.json'
@@ -780,7 +789,7 @@ def save_app_settings(patch):
         cur['closed_dates']={str(k):str(v) for k,v in patch['closed_dates'].items() if re.match(r'^\d{4}-\d{2}-\d{2}$',str(k))}
     if 'enabled_radios' in patch and isinstance(patch['enabled_radios'],list):
         cur['enabled_radios']=[str(x) for x in patch['enabled_radios'] if str(x) in DEFAULT_APP_SETTINGS['enabled_radios']]
-    for k in ('billbee_api_key','billbee_username','billbee_api_password'):
+    for k in ('billbee_api_key','billbee_username','billbee_api_password','web_url','web_token'):
         if k in patch: cur[k]=str(patch[k] or '').strip()
     _app_settings_file().write_text(json.dumps(cur,ensure_ascii=False),encoding='utf-8')
     return cur
@@ -1362,8 +1371,9 @@ def attach_pending_scans(jid,customer='',first_name=''):
     return copied
 
 DOCUMENT_LIBRARY = [
- {'id':'vollmacht','title':'Vollmacht','file':'Vollmacht.pdf','kind':'Standardformular'},
- {'id':'sepa','title':'SEPA-Lastschriftmandat','file':'SEPA.pdf','kind':'Standardformular'},
+ # Vollmacht + SEPA: Formular des Rhein-Kreises Neuss (leere, flache Seiten 1 und 3 aus Vollmacht_SEPA_RKN.pdf)
+ {'id':'vollmacht','title':'Vollmacht','file':'Vollmacht_RKN.pdf','kind':'Standardformular'},
+ {'id':'sepa','title':'SEPA-Lastschriftmandat','file':'SEPA_RKN.pdf','kind':'Standardformular'},
  {'id':'laufzettel','title':'SERVICE POINT Laufzettel','file':'Laufzettel.pdf','kind':'Intern'},
  {'id':'verlust_zbi','title':'Verlust Fahrzeugschein / ZB I','file':'Verlust_Fahrzeugschein.pdf','kind':'Sonderformular'},
  {'id':'verlust_kz','title':'Kennzeichen-Verlustanzeige','file':'Verlust_Kennzeichen.pdf','kind':'Sonderformular'},
@@ -1399,6 +1409,124 @@ def job_documents(jid):
     if not r:return []
     return relevant_documents(r['process'],r['plate_transfer'])
 
+# Vollmacht + SEPA-Mandat: Formular des Rhein-Kreises Neuss (Seite 1 Vollmacht, Seite 2 Erlaeuterungen, Seite 3 SEPA),
+# erweitert um eVB-Nummer, Kennzeichen-Art (E/H/Saison) und Feinstaubplakette – mit dem StVA abgesprochen.
+# Die erweiterte Vorlage erzeugt vorlage_vollmacht_erweitern.py aus dem Original (Vollmacht_SEPA_RKN.pdf).
+# Sie hat echte Formularfelder; wie bei den anderen Vorlagen wird der Text an deren Position aufgedruckt und das PDF
+# danach flach gemacht (Felder entfernt) – so sieht es in jedem Browser und auf jedem Drucker gleich aus.
+RKN_FORM='Vollmacht_SEPA_erweitert.pdf'
+
+def _pdf_field_name(a):
+    """Voller Feldname eines Widgets (z. B. 'wunsch.auswahl') ueber alle Eltern-Felder."""
+    parts=[]; o=a
+    while o is not None:
+        if o.get('/T') is not None: parts.insert(0,str(o['/T']))
+        p=o.get('/Parent'); o=p.get_object() if p is not None else None
+    return '.'.join(parts)
+
+def _pdf_field_attr(a,key):
+    o=a
+    while o is not None:
+        if o.get(key) is not None: return o[key]
+        p=o.get('/Parent'); o=p.get_object() if p is not None else None
+    return None
+
+def _kz_art_text(e):
+    """'Kennzeichen: Saisonkennzeichen 04–10' usw. aus Zusatzangaben (art = E/H/S/SE/SH, season = 'MM–MM')."""
+    e=e or {}; art={'E':'E-Kennzeichen (Elektro)','H':'H-Kennzeichen (Oldtimer)','S':'Saisonkennzeichen','SE':'Saison- und E-Kennzeichen','SH':'Saison- und H-Kennzeichen'}.get(e.get('art') or '')
+    if not art: return ''
+    return 'Kennzeichen: '+art+(' '+e['season'] if e.get('season') and e['art'].startswith('S') else '')
+
+def web_extras(jid):
+    """Zusatzangaben (Kennzeichen-Art, Saison, Feinstaubplakette) der zuletzt online uebermittelten Formular-Angaben eines Auftrags."""
+    c=db(); r=c.execute("SELECT extra FROM web_formulare WHERE job_id=? AND info='ok' AND COALESCE(extra,'')<>'' ORDER BY imported DESC LIMIT 1",(jid,)).fetchone(); c.close()
+    try: return json.loads(r['extra']) if r else {}
+    except Exception: return {}
+
+def _vollmacht_extras(jid,d):
+    """Werte fuer die ergaenzten Felder der Vollmacht: eVB-Nummer, Kennzeichen-Art (E/H/Saison + Monate), Feinstaubplakette.
+    Quelle: eVB aus dem Auftrag, sonst Laufzettel bzw. Online-Angaben des Kunden."""
+    o=get_lauf_options(jid); x=web_extras(jid); werte={}; kreuze={}
+    evb=(d.get('evb') or o.get('evb') or '').strip().upper()
+    if evb: werte['evb']=evb
+    art=o.get('kz_art') or x.get('art') or ('S' if o.get('saison') else '')
+    if 'E' in art: kreuze['kz_e']='Ja'
+    if 'H' in art: kreuze['kz_h']='Ja'
+    if art.startswith('S'):
+        kreuze['kz_saison']='Ja'
+        m=re.findall(r'\d{1,2}',o.get('season') or x.get('season') or '')
+        if len(m)>=2: werte['saison_von'],werte['saison_bis']=m[0].zfill(2),m[1].zfill(2)
+    if o.get('feinstaub') or x.get('fein'): kreuze['feinstaub']='Ja'
+    return werte,kreuze
+
+def _rkn_fill(page_index,values,kreuze,dest):
+    """Fuellt eine Seite des Kreis-Formulars: Text in Textfelder (Kammfelder: je Zeichen ein Kaestchen), Kreuz in Ankreuzfelder."""
+    from pypdf import PdfReader, PdfWriter
+    from reportlab.pdfgen import canvas
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+    from io import BytesIO
+    page=PdfReader(BASE/'templates'/RKN_FORM).pages[page_index]
+    packet=BytesIO(); cv=canvas.Canvas(packet,pagesize=(float(page.mediabox.width),float(page.mediabox.height)))
+    for ref in page.get('/Annots',[]):
+        a=ref.get_object(); name=_pdf_field_name(a); rect=a.get('/Rect')
+        if not rect: continue
+        x1,x2=sorted([float(rect[0]),float(rect[2])]); y1,y2=sorted([float(rect[1]),float(rect[3])]); w,h=x2-x1,y2-y1
+        if name in kreuze:
+            ap=a.get('/AP'); n=ap.get_object().get('/N') if ap else None
+            ein=[str(k)[1:] for k in (n.get_object().keys() if n is not None else []) if str(k)!='/Off']
+            if kreuze[name] in ein:
+                # Kreuz als zwei Linien (Schrift-Symbole werden nicht von jedem Programm gleich dargestellt)
+                k=min(w,h)*.3; cx,cy=x1+w/2,y1+h/2; cv.setLineWidth(1.3)
+                cv.line(cx-k,cy-k,cx+k,cy+k); cv.line(cx-k,cy+k,cx+k,cy-k)
+            continue
+        val=re.sub(r'\s+',' ',str(values.get(name) or '')).strip()
+        if not val: continue
+        da=str(_pdf_field_attr(a,'/DA') or ''); m=re.search(r'([\d.]+)\s+Tf',da)
+        size=min(float(m.group(1)) if m else 10,h*.75)
+        maxlen=int(_pdf_field_attr(a,'/MaxLen') or 0); comb=int(_pdf_field_attr(a,'/Ff') or 0)&(1<<24)
+        if comb and maxlen:
+            val=val[:maxlen]; cell=w/maxlen; size=min(size,10); cv.setFont('Helvetica',size)
+            for i,ch in enumerate(val): cv.drawCentredString(x1+cell*(i+.5),y1+(h-size*.7)/2,ch)
+        else:
+            while size>6 and stringWidth(val,'Helvetica',size)>w-4: size-=.5
+            cv.setFont('Helvetica',size); cv.drawString(x1+2,y1+(h-size*.7)/2,val)
+    cv.save(); packet.seek(0); ov=PdfReader(packet)
+    if ov.pages: page.merge_page(ov.pages[0])
+    if '/Annots' in page: del page['/Annots']
+    w_=PdfWriter(); w_.add_page(page)
+    with open(dest,'wb') as f: w_.write(f)
+    return dest
+
+def _rkn_vollmacht_sepa(d,today):
+    """Werte fuer Seite 1 (Vollmacht) und Seite 3 (SEPA) aus den Auftragsdaten."""
+    full=(d.get('customer') or '').strip(); first=(d.get('first_name') or '').strip(); halter=(first+' '+full).strip()
+    ort=' '.join(x for x in [(d.get('postal') or '').strip(),(d.get('city') or '').strip()] if x)
+    fzg=[(d.get('manufacturer') or '').strip(),('FIN '+d['fin'].strip()) if (d.get('fin') or '').strip() else '']
+    v={'halter.name':f'{full}, {first}' if full and first else (full or first),'halter.gdatum':d.get('birthdate',''),'halter.telefon':d.get('mobile',''),
+       'halter.anschrift':', '.join(x for x in [(d.get('address') or '').strip(),ort] if x),'footer.ort':', '.join(x for x in [(d.get('city') or '').strip(),today] if x)}
+    kreuze={}
+    plate=(d.get('plate') or '').strip().upper(); wunsch=(d.get('desired_plate') or '').strip().upper()
+    if str(d.get('plate_transfer') or '').lower()=='ja' and plate:
+        kreuze['wunsch.auswahl']='NEIN'; v['wunsch.alt']=plate
+    elif wunsch:
+        kreuze['wunsch.auswahl']='JA'
+        treffer=dict(re.findall(r'\b(NE|GV)\s*-?\s*([A-Z]{1,2}\s*\d{1,4}[EH]?)\b',wunsch))
+        if treffer: v['wunsch.alternative1']=treffer.get('NE',''); v['wunsch.alternative2']=treffer.get('GV','')
+        else: fzg.append('Wunschkennzeichen '+wunsch)   # z. B. schon reserviert, ohne NE/GV-Angabe
+        kreuze['wunsch.alternative3']='ermessen' if 'nach unserem Ermessen' in (d.get('missing') or '') else 'laufend'
+    v['fzg.angaben']=', '.join(x for x in fzg if x)
+    anders=d.get('account_holder_same_taxpayer','Ja')=='Ja' and d.get('taxpayer_same_holder','Ja')!='Ja'
+    zahler=d.get('account_holder') or (' '.join(x for x in [d.get('taxpayer_first_name',''),d.get('taxpayer_name','')] if x).strip() if anders else '') or halter
+    bb=[x.strip() for x in re.split(r'\s*/\s*',(d.get('bic_bank') or '').strip()) if x.strip()]
+    bic=bb[0].upper() if bb and re.fullmatch(r'[A-Za-z]{6}[A-Za-z0-9]{2}([A-Za-z0-9]{3})?',bb[0]) else ''
+    bank=' / '.join(bb[1:] if bic else bb)
+    s={'Vorname und Nachname':zahler,'Straße und Hausnummer':d.get('taxpayer_address') if anders else d.get('address',''),
+       'Postleitzahl':d.get('taxpayer_postal') if anders else d.get('postal',''),'Ort':d.get('taxpayer_city') if anders else d.get('city',''),
+       'Land':d.get('country') or 'Deutschland','IBAN International Bank Account Number':re.sub(r'\s','',d.get('iban') or '').upper(),
+       'BIC Business Identifier Code':bic,'Name der Bank':bank,'Ort der Unterschrift':d.get('city',''),'Datum der Unterschrift':today.replace('.',''),
+       'Vorname und Nachname_2':halter,'Amtliches Kennzeichen':plate or (wunsch if len(wunsch)<=10 else '')}
+    return v,kreuze,s
+
 def fill_pdfs(jid):
     try:
         from pypdf import PdfReader, PdfWriter
@@ -1411,8 +1539,13 @@ def fill_pdfs(jid):
     full=(d.get('customer') or '').strip(); first=(d.get('first_name') or '').strip()
     addr=' '.join(x for x in [d.get('address',''),d.get('postal',''),d.get('city','')] if x).strip()
     today=datetime.now().strftime('%d.%m.%Y'); plate=d.get('plate') or d.get('desired_plate','')
-    maps=[('Vollmacht.pdf',{'halter_name':full,'halter_vorname':first,'geburtsdatum':d.get('birthdate',''),'geburtsort':d.get('birthplace',''),'geburtsname':d.get('birthname',''),'anschrift':addr,'telefon':d.get('mobile',''),'hersteller_typ':d.get('manufacturer',''),'zb2_nr':d.get('zb2',''),'fin':d.get('fin',''),'kennzeichen':d.get('plate',''),'wunschkennzeichen':d.get('desired_plate',''),'evb_referenz':d.get('evb',''),'ort_datum':f"{d.get('city','')}, {today}"}),
-    ('SEPA.pdf',{'kontoinhaber':d.get('account_holder') or (first+' '+full).strip(),'strasse_hausnr':(d.get('taxpayer_address') if d.get('account_holder_same_taxpayer','Ja')=='Ja' and d.get('taxpayer_same_holder','Ja')!='Ja' else d.get('address','')),'plz':(d.get('taxpayer_postal') if d.get('account_holder_same_taxpayer','Ja')=='Ja' and d.get('taxpayer_same_holder','Ja')!='Ja' else d.get('postal','')),'ort':(d.get('taxpayer_city') if d.get('account_holder_same_taxpayer','Ja')=='Ja' and d.get('taxpayer_same_holder','Ja')!='Ja' else d.get('city','')),'land':d.get('country') or 'Deutschland','iban':d.get('iban',''),'bic_bank':d.get('bic_bank',''),'ort_unterschrift':d.get('city',''),'datum_unterschrift':today,'halter_name':(first+' '+full).strip(),'amtliches_kennzeichen':plate})]
+    # Vollmacht + SEPA-Mandat: Formular des Rhein-Kreises Neuss
+    vollm,kreuze,sepa=_rkn_vollmacht_sepa(d,today)
+    ew,ek=_vollmacht_extras(jid,d); vollm.update(ew); kreuze.update(ek)
+    _rkn_fill(0,vollm,kreuze,out/f'Vollmacht_Auftrag_{jid:05d}.pdf')
+    _rkn_fill(2,sepa,{},out/f'SEPA_Auftrag_{jid:05d}.pdf')
+    files=[f'Vollmacht_Auftrag_{jid:05d}.pdf',f'SEPA_Auftrag_{jid:05d}.pdf']
+    maps=[]
     if d.get('need_gbr')=='Ja':
         maps.append(('Haftungserklaerung.pdf',{'BezeichnungGbR':full,'Verantwortlich':(first+' '+full).strip(),'kennzeichen':plate,'fin':d.get('fin',''),'hersteller':d.get('manufacturer',''),'name':full,'vorname':first,'hausnr':d.get('address',''),'ort':d.get('city',''),'gesellschafter.eins.datum':today},{'name','vorname','hausnr','ort'}))
     if d.get('need_kurzzeit')=='Ja':
@@ -1421,7 +1554,6 @@ def fill_pdfs(jid):
         maps.append(('Verbleib_auslaendische_Kennzeichen.pdf',{'name':full,'vorname':first,'anschrift':addr,'kennzeichen':plate,'fin':d.get('fin',''),'ort':d.get('city',''),'datum':today},set()))
     if d.get('need_erhalt')=='Ja':
         maps.append(('Erhalt_Fahrzeugpapiere.pdf',{'kunde':(first+' '+full).strip(),'anschrift':addr,'erhaltsdatum':today,'zb2_nummer':d.get('zb2',''),'fin':d.get('fin',''),'kennzeichen':plate,'ort':d.get('city',''),'datum':today},set()))
-    files=[]
     for entry in maps:
         fn,fields=entry[0],entry[1]; firstonly=entry[2] if len(entry)>2 else set(); seen_first=set()
         reader=PdfReader(BASE/'templates'/fn)
@@ -1464,14 +1596,15 @@ def get_lauf_options(jid):
     c=db(); r=c.execute('SELECT * FROM jobs WHERE id=?',(jid,)).fetchone(); c.close()
     if not r:return {}
     d=dict(r); proc=(d.get('process') or '').lower(); signs=(d.get('signs') or '').lower(); vt=(d.get('vehicle_type') or '').lower()
+    x=web_extras(jid)   # online gewuenscht: Saison / Feinstaubplakette -> Laufzettel vorbelegen
     return {
       'name':' '.join(x for x in [d.get('first_name',''),d.get('customer','')] if x).strip(), 'mobile':d.get('mobile',''),
       'date':datetime.now().strftime('%d.%m.%Y'),'invoice':'','evb':d.get('evb',''),'desired_plate':d.get('desired_plate',''),
-      'sign_count':'','sign_size':d.get('sign_size',''),'season':'','other_service':'','other_docs':'','other_vehicle':'',
+      'sign_count':'','sign_size':d.get('sign_size',''),'season':x.get('season',''),'other_service':'','other_docs':'','other_vehicle':'',
       'neuzulassung':'neu' in proc,'zulassung':('zulassung' in proc and 'neu' not in proc and 'online' not in proc),'umschreibung':'ummeld' in proc or 'umschreib' in proc,
       'ausserbetrieb':'abmeld' in proc or 'außerbetrieb' in proc,'aenderung_technik':'eintragung' in proc or 'fahrzeugtechnik' in proc,'aenderung_halter':'adress' in proc or 'halterdaten' in proc,
-      'ersatz_zbi':'ersatz' in proc,'ausfuhr':'ausfuhr' in proc,'kurzzeit':'kurzzeit' in proc,'saison':'saison' in proc,'online':'online' in proc,
-      'wunsch':bool(d.get('desired_plate')),'kz_uebernahme':(d.get('plate_transfer') or '').lower()=='ja','feinstaub':False,'plakette100':False,
+      'ersatz_zbi':'ersatz' in proc,'ausfuhr':'ausfuhr' in proc,'kurzzeit':'kurzzeit' in proc,'saison':'saison' in proc or str(x.get('art','')).startswith('S'),'online':'online' in proc,
+      'wunsch':bool(d.get('desired_plate')),'kz_uebernahme':(d.get('plate_transfer') or '').lower()=='ja','feinstaub':bool(x.get('fein')),'plakette100':False,
       'zbii':False,'zbi':False,'tuev':False,'evb_doc':bool(d.get('evb')),'evb_von_uns':False,'pkw':'pkw' in vt,'motorrad':'motorrad' in vt,'anhaenger':'anhänger' in vt or 'anhaenger' in vt,
       'sonstige_kfz':bool(vt and not any(x in vt for x in ['pkw','motorrad','anhänger','anhaenger'])),'schild_neu':'neu' in signs,'schild_spezial':False,'schild_vorhanden':'vorhanden' in signs or 'bleiben' in signs,'kein_schild':'keine' in signs
     }
@@ -1569,6 +1702,291 @@ def create_print_package(jid, selected=None):
 
 STATIC=BASE/'static'
 STATIC_TYPES={'.css':'text/css; charset=utf-8','.js':'application/javascript; charset=utf-8','.html':'text/html; charset=utf-8','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.svg':'image/svg+xml'}
+# ---------- Website: Online-Vormerkungen ----------
+# Das Programm meldet alle 10 Sekunden die freien regulaeren Tagesplaetze an die Annahme-Schnittstelle der Website
+# (web_annahme/annahme.php) und holt dabei neue Online-Vormerkungen ab. Die Verbindung geht nur von hier aus
+# nach draussen – dieser PC ist aus dem Internet nicht erreichbar.
+WEB_TAGE_VORAUS=60
+WEB_INTERVALL=10
+WEB_VORGAENGE={'Wiederzulassung','Neuzulassung','Umschreibung','Außerbetriebsetzung','Änderung Halterdaten','Kurzzeitkennzeichen','Ausfuhrkennzeichen','Ersatzausstellung ZB I','Kennzeichenverlust','Änderung Fahrzeugtechnik'}
+WEB_STATUS={'letzter_versuch':'','letzter_erfolg':'','fehler':'','neu':[]}
+WEB_LOCK=threading.Lock(); WEB_WAKE=threading.Event()
+
+def web_capacity(c):
+    """Freie regulaere Plaetze je StVA-Arbeitstag ab morgen (Wochenenden, NRW-Feiertage und Schliesstage fehlen)."""
+    reg=regular_slots(); d=datetime.now().date(); out={}
+    for _ in range(WEB_TAGE_VORAUS):
+        d+=timedelta(days=1)
+        if is_workday(d): out[d.isoformat()]=max(0,reg-day_count(c,d.isoformat()))
+    return out
+
+def _web_date(s):
+    try: d=datetime.strptime(s,'%Y-%m-%d'); return ['Mo','Di','Mi','Do','Fr','Sa','So'][d.weekday()]+d.strftime(' %d.%m.')
+    except Exception: return s
+
+def web_import(b):
+    """Legt eine Online-Vormerkung als Auftrag (VORGEPLANT) an. Ist der Wunschtag inzwischen voll,
+    rutscht der Auftrag auf den naechsten freien Tag und bekommt den Status 'Rückfrage'."""
+    nr=str(b.get('nr','')).strip()
+    if not nr: return None
+    c=db(); known=c.execute('SELECT job_id FROM web_imports WHERE nr=?',(nr,)).fetchone()
+    if known:
+        # schon uebernommen, die Bestaetigung ist aber nicht angekommen -> erneut quittieren
+        c.execute('UPDATE web_imports SET acked=0 WHERE nr=?',(nr,)); c.commit(); c.close(); return None
+    c.close()
+    wunsch=str(b.get('stva_date',''))[:10]; proc=str(b.get('process',''))
+    eingang=str(b.get('eingang',''))[:16].replace('T',' ')
+    note=[f'Online-Vormerkung {nr} (Website, {eingang})',f'Wunschtag StVA: {_web_date(wunsch)}',f'Neue Schilder: {b.get("new_signs","Nein")}']
+    if proc and proc not in WEB_VORGAENGE: note.append(f'Anliegen: {proc}')
+    if b.get('missing'): note.append(f'Bemerkung: {b.get("missing")}')
+    if b.get('lang') and b.get('lang')!='de': note.append(f'Sprache auf der Website: {str(b.get("lang")).upper()}')
+    d={'stva_date':wunsch,'customer':str(b.get('customer',''))[:80],'first_name':str(b.get('first_name',''))[:60],'mobile':str(b.get('mobile',''))[:30],
+       'vehicle_type':str(b.get('vehicle_type','')),'process':proc if proc in WEB_VORGAENGE else '','plate_transfer':'Ja' if b.get('plate_transfer')=='Ja' else '',
+       'status':'VORGEPLANT','country':'Deutschland','missing':'\n'.join(note)}
+    jid,actual=save_job(d)
+    if actual!=wunsch:
+        note.append(f'ACHTUNG: Wunschtag {_web_date(wunsch)} war schon voll – eingeplant für {_web_date(actual)}. Bitte Kunden informieren.')
+        c=db(); c.execute('UPDATE jobs SET status=?,missing=? WHERE id=?',('Rückfrage','\n'.join(note),jid)); c.commit(); c.close()
+    c=db(); c.execute('INSERT OR REPLACE INTO web_imports(nr,job_id,wunschtag,stva_date,imported,acked) VALUES(?,?,?,?,?,0)',(nr,jid,wunsch,actual,datetime.now().isoformat(timespec='seconds'))); c.commit(); c.close()
+    return {'nr':nr,'id':jid,'name':' '.join(x for x in (d['first_name'],d['customer']) if x),'wunschtag':wunsch,'stva_date':actual,'verschoben':actual!=wunsch}
+
+def _web_post(url,token,payload,timeout=20):
+    req=urllib.request.Request(url+('&' if '?' in url else '?')+'a=sync',data=json.dumps(payload,ensure_ascii=False).encode('utf-8'),method='POST',
+        headers={'Content-Type':'application/json','Accept':'application/json','X-Annahme-Token':token,'User-Agent':f'ServicePointBuero/{VERSION}'})
+    try:
+        with urllib.request.urlopen(req,timeout=timeout) as r: res=json.loads(r.read().decode('utf-8'))
+    except urllib.error.HTTPError as e:
+        try: code=(json.loads(e.read().decode('utf-8')) or {}).get('fehler','')
+        except Exception: code=''
+        raise RuntimeError({'schluessel':'Der Verbindungsschlüssel passt nicht zur Website.','nicht_eingerichtet':'Auf der Website ist noch kein Verbindungsschlüssel eingetragen.'}.get(code,f'Website antwortet mit Fehler {e.code}.'))
+    except Exception as e:
+        raise RuntimeError('Website nicht erreichbar ('+str(e)+').')
+    if not isinstance(res,dict) or not res.get('ok'): raise RuntimeError('Unerwartete Antwort der Website.')
+    return res
+
+# ---------- Website: Vollmacht + SEPA-Mandat online ausgefuellt (verschluesselt) ----------
+# Die Website verschluesselt die Angaben schon im Browser mit dem oeffentlichen Schluessel dieses Programms
+# (RSA-OAEP 3072 + AES-GCM). Der private Schluessel liegt nur hier (DATA/web_formular_key.pem) – Website und
+# Webserver koennen die Angaben nicht lesen. Ohne das Paket 'cryptography' bietet die Website nur „PDF erstellen“ an.
+_WEB_KEY=[]; _WEB_KEY_LOCK=threading.Lock()
+
+def _web_key():
+    with _WEB_KEY_LOCK:
+        if not _WEB_KEY:
+            try:
+                from cryptography.hazmat.primitives.asymmetric import rsa
+                from cryptography.hazmat.primitives import serialization
+            except ImportError:
+                return None   # spaeter erneut versuchen (z. B. nach INSTALLIEREN.bat)
+            f=DATA/'web_formular_key.pem'
+            if f.exists(): key=serialization.load_pem_private_key(f.read_bytes(),None)
+            else:
+                key=rsa.generate_private_key(public_exponent=65537,key_size=3072)
+                f.write_bytes(key.private_bytes(serialization.Encoding.PEM,serialization.PrivateFormat.PKCS8,serialization.NoEncryption()))
+            _WEB_KEY.append(key)
+        return _WEB_KEY[0]
+
+def web_public_key():
+    """Oeffentlicher Schluessel (SPKI, Base64) fuer die Website – leer, wenn 'cryptography' fehlt."""
+    key=_web_key()
+    if not key: return ''
+    import base64
+    from cryptography.hazmat.primitives import serialization
+    return base64.b64encode(key.public_key().public_bytes(serialization.Encoding.DER,serialization.PublicFormat.SubjectPublicKeyInfo)).decode('ascii')
+
+def web_decrypt(f):
+    import base64
+    from cryptography.hazmat.primitives.asymmetric import padding
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    aes=_web_key().decrypt(base64.b64decode(f['k']),padding.OAEP(mgf=padding.MGF1(algorithm=hashes.SHA256()),algorithm=hashes.SHA256(),label=None))
+    return json.loads(AESGCM(aes).decrypt(base64.b64decode(f['iv']),base64.b64decode(f['d']),None).decode('utf-8'))
+
+def web_formular_import(f):
+    """Uebernimmt online ausgefuellte Vollmacht-/SEPA-Angaben in den Auftrag der Vormerkung. Leere Felder werden
+    gefuellt; ist ein Feld schon anders ausgefuellt, steht der Online-Wert nur in den Notizen.
+    Rueckgabe: True = erledigt (wird quittiert), False = spaeter erneut versuchen."""
+    fid=str(f.get('id') or '')[:40]; nr=str(f.get('nr') or '')[:10]
+    if not fid or not nr: return False
+    c=db()
+    if c.execute('SELECT 1 FROM web_formulare WHERE id=?',(fid,)).fetchone():
+        # schon uebernommen, die Quittung ist aber nicht angekommen -> erneut quittieren
+        c.execute('UPDATE web_formulare SET acked=0 WHERE id=?',(fid,)); c.commit(); c.close(); return True
+    w=c.execute('SELECT job_id FROM web_imports WHERE nr=?',(nr,)).fetchone()
+    j=c.execute('SELECT * FROM jobs WHERE id=?',(w['job_id'],)).fetchone() if w else None
+    c.close()
+    if not j or not _web_key(): return False   # Vormerkung (noch) nicht hier oder Schluessel fehlt -> beim naechsten Abgleich
+    zeit=datetime.now().strftime('%d.%m.%Y %H:%M'); upd={}; info='ok'
+    try:
+        x=web_decrypt(f)
+        if str(x.get('nr',''))!=nr: raise ValueError('Vormerkungsnummer passt nicht')
+    except Exception:
+        x=None; info='nicht lesbar'
+        notiz=[f'Online-Formular zu {nr} ({zeit}) konnte nicht gelesen werden – Vollmacht und SEPA-Mandat bitte vor Ort ausfüllen.']
+    if x is not None:
+        t=lambda o,k,n=80: re.sub(r'[\x00-\x1f\x7f]+',' ',str((o or {}).get(k) or '')).strip()[:n]
+        h=x.get('halter') or {}; z=x.get('fzg') or {}; k=x.get('kz') or {}; s=x.get('sepa') or {}
+        werte=[('first_name','Vorname',t(h,'first',60)),('customer','Nachname/Firma',t(h,'last')),('birthdate','Geburtsdatum',t(h,'birth',10)),
+               ('mobile','Telefon',t(h,'tel',30)),('address','Straße',t(h,'street')),('postal','PLZ',t(h,'zip',10)),('city','Ort',t(h,'city',60)),
+               ('manufacturer','Hersteller/Typ',t(z,'make',60)),('fin','FIN',t(z,'fin',17)),('evb','eVB-Nummer',t(z,'evb',7)),
+               ('iban','IBAN',t(s,'iban',34)),('bic_bank','BIC/Bank',' / '.join(v for v in (t(s,'bic',11),t(s,'bank',60)) if v))]
+        mode=t(k,'mode',10)
+        if mode=='wunsch':
+            werte.append(('desired_plate','Wunschkennzeichen',' oder '.join(p+v for p,v in (('NE-',t(k,'ne',12)),('GV-',t(k,'gv',12))) if v)))
+        elif mode=='alt':
+            werte.append(('plate','Bisheriges Kennzeichen',t(k,'alt',15)))
+        genommen=[]; abweichend=[]
+        for col,label,val in werte:
+            if not val: continue
+            cur=str(j[col] or '').strip()
+            if not cur: upd[col]=val; genommen.append(label)
+            elif re.sub(r'[\s.\-/]','',cur).upper()!=re.sub(r'[\s.\-/]','',val).upper(): abweichend.append(f'{label}: {val}')
+        if s.get('same') is False:
+            zahler=[('taxpayer_name','Kontoinhaber',t(s,'name')),('taxpayer_address','Straße Kontoinhaber',t(s,'street')),
+                    ('taxpayer_postal','PLZ Kontoinhaber',t(s,'zip',10)),('taxpayer_city','Ort Kontoinhaber',t(s,'city',60))]
+            if not str(j['taxpayer_name'] or '').strip() and not str(j['account_holder'] or '').strip():
+                upd.update({c_:v for c_,_,v in zahler}); upd.update({'taxpayer_same_holder':'Nein','account_holder_same_taxpayer':'Ja','account_holder':t(s,'name')})
+                genommen.append('Kontoinhaber mit Anschrift')
+            else: abweichend.append('Kontoinhaber: '+', '.join(v for _,_,v in zahler if v))
+        notiz=[f'Vollmacht/SEPA online ausgefüllt ({zeit}) – Vollmacht und SEPA-Mandat können ausgefüllt gedruckt werden.']
+        if genommen: notiz.append('Übernommen: '+', '.join(genommen)+'.')
+        if abweichend: notiz.append('Abweichend (nicht übernommen): '+'; '.join(abweichend)+'.')
+        if mode=='wunsch': notiz.append('Falls das Wunschkennzeichen nicht frei ist: '+('Auswahl nach unserem Ermessen' if t(k,'sonst',10)=='ermessen' else 'laufende Serie')+'.')
+        if mode=='alt': notiz.append('Kunde möchte das bisherige Kennzeichen behalten.')
+        # Zusatzangaben (Kennzeichen-Art, Saison, Feinstaubplakette): fuer Laufzettel und Vollmacht-Druck merken
+        zu=x.get('zusatz') or {}; art=t(zu,'art',2).upper()
+        extra={'art':art if art in ('E','H','S','SE','SH') else '','fein':zu.get('fein') is True}
+        if extra['art'].startswith('S') and re.fullmatch(r'\d{2}',t(zu,'von',2)) and re.fullmatch(r'\d{2}',t(zu,'bis',2)):
+            extra['season']=f"{t(zu,'von',2)}–{t(zu,'bis',2)}"
+        if _kz_art_text(extra): notiz.append(_kz_art_text(extra)+'.')
+        if extra['fein']: notiz.append('Feinstaubplakette gewünscht.')
+    upd['missing']=((j['missing'] or '')+'\n'+'\n'.join(notiz)).strip()
+    c=db()
+    c.execute('UPDATE jobs SET '+','.join(f'{col}=?' for col in upd)+' WHERE id=?',(*upd.values(),j['id']))
+    c.execute('INSERT OR REPLACE INTO web_formulare(id,nr,job_id,imported,acked,info,extra) VALUES(?,?,?,?,0,?,?)',
+              (fid,nr,j['id'],datetime.now().isoformat(timespec='seconds'),info,json.dumps(extra,ensure_ascii=False) if x is not None else ''))
+    c.commit(); c.close()
+    return True
+
+def web_sync_once(timeout=20,warten=-1):
+    """Ein Abgleich: Quittungen + freie Plaetze senden, neue Vormerkungen uebernehmen. Gibt die neu angelegten Auftraege zurueck."""
+    s=get_app_settings(); url=s.get('web_url',''); token=s.get('web_token','')
+    if not url or not token: return []
+    if not WEB_LOCK.acquire(timeout=warten): return []
+    try:
+        WEB_STATUS['letzter_versuch']=datetime.now().isoformat(timespec='seconds'); neu=[]
+        try:
+            for _ in range(4):
+                c=db(); quitt=[r['nr'] for r in c.execute('SELECT nr FROM web_imports WHERE acked=0')]
+                fquitt=[r['id'] for r in c.execute('SELECT id FROM web_formulare WHERE acked=0')]; tage=web_capacity(c); c.close()
+                res=_web_post(url,token,{'plaetze':regular_slots(),'tage':tage,'quittungen':quitt,'formular_quittungen':fquitt,
+                                         'pk':web_public_key(),'version':VERSION},timeout)
+                if quitt:
+                    c=db(); c.executemany('UPDATE web_imports SET acked=1 WHERE nr=?',[(n,) for n in quitt]); c.commit(); c.close()
+                if fquitt:
+                    c=db(); c.executemany('UPDATE web_formulare SET acked=1 WHERE id=?',[(n,) for n in fquitt]); c.commit(); c.close()
+                offen=[b for b in (res.get('neu') or []) if isinstance(b,dict) and b.get('nr') and b.get('nr') not in quitt]
+                for b in offen:
+                    x=web_import(b)
+                    if x: neu.append(x)
+                # Vollmacht-/SEPA-Angaben erst nach den Vormerkungen – sie gehoeren zu deren Auftraegen
+                formulare=[f for f in (res.get('formulare') or []) if isinstance(f,dict) and f.get('id') and f.get('id') not in fquitt]
+                erledigt=[f for f in formulare if web_formular_import(f)]
+                if not offen and not erledigt: break
+        except Exception as e:
+            WEB_STATUS['fehler']=str(e); raise
+        WEB_STATUS['letzter_erfolg']=datetime.now().isoformat(timespec='seconds'); WEB_STATUS['fehler']=''
+        WEB_STATUS['neu']=(WEB_STATUS['neu']+neu)[-20:]
+        return neu
+    finally:
+        WEB_LOCK.release()
+
+def web_sync_before_booking():
+    """Bevor im Buero ein Auftrag eingeplant oder verschoben wird (Laufkundschaft), kurz neue Online-Vormerkungen
+    holen – so wird ein online reservierter Platz nicht doppelt vergeben. Blockiert hoechstens ein paar Sekunden.
+    Bei vielen Speichervorgaengen direkt hintereinander (z. B. Einfuegen aus Excel in die Tagesliste) nur einmal:
+    letzte solche Nachfrage vor weniger als 3 Sekunden -> nicht erneut; Website eben nicht erreichbar -> 30 Sekunden
+    nicht erneut versuchen. (Faellt doch einmal etwas zusammen, landet die Online-Vormerkung wie sonst auch auf dem
+    naechsten freien Tag mit Status 'Rückfrage' – es wird nie ueberbucht.)"""
+    try:
+        jetzt=time.time()
+        if jetzt-_WEB_VOR_BUCHUNG[0]<3: return []
+        if WEB_STATUS.get('fehler'):
+            try:
+                if (datetime.now()-datetime.fromisoformat(WEB_STATUS.get('letzter_versuch') or '')).total_seconds()<30: return []
+            except Exception: pass
+        _WEB_VOR_BUCHUNG[0]=jetzt
+        return web_sync_once(timeout=4,warten=5)
+    except Exception: return []
+_WEB_VOR_BUCHUNG=[0.0]
+
+def _plant_tag(d):
+    """True, wenn ein Speichern einen StVA-Tag neu vergibt (neuer Auftrag oder geaenderter Tag)."""
+    if not d.get('id'): return True
+    c=db(); r=c.execute('SELECT stva_date FROM jobs WHERE id=?',(int(d['id']),)).fetchone(); c.close()
+    return not r or (d.get('stva_date') or '')!=(r['stva_date'] or '')
+
+def web_sync_loop():
+    while True:
+        WEB_WAKE.wait(WEB_INTERVALL); WEB_WAKE.clear()
+        try: web_sync_once()
+        except Exception: pass
+
+# Oeffnungszeiten des Bueros (Mo=0 ... Fr=4) – fuer die Abgabe-Frist in der WhatsApp-Bestaetigung
+BUERO_ZEITEN={0:('07:30','16:30'),1:('07:30','15:30'),2:('07:30','16:30'),3:('07:30','15:30'),4:('07:30','13:00')}
+WOCHENTAGE=['Montag','Dienstag','Mittwoch','Donnerstag','Freitag','Samstag','Sonntag']
+
+def _tag_lang(iso):
+    try: d=datetime.strptime(iso,'%Y-%m-%d'); return f"{WOCHENTAGE[d.weekday()]}, {d.strftime('%d.%m.%Y')}"
+    except Exception: return iso
+
+def web_unbestaetigt():
+    """Online-Vormerkungen der letzten 14 Tage, denen noch keine WhatsApp-Bestaetigung geschickt wurde."""
+    grenze=(datetime.now()-timedelta(days=14)).isoformat(timespec='seconds')
+    c=db(); rows=c.execute("SELECT w.nr,w.job_id,w.wunschtag,j.stva_date,j.first_name,j.customer,"
+                           "EXISTS(SELECT 1 FROM web_formulare f WHERE f.nr=w.nr AND f.info='ok') AS formular FROM web_imports w JOIN jobs j ON j.id=w.job_id "
+                           "WHERE COALESCE(w.bestaetigt,'')='' AND w.imported>=? ORDER BY w.imported LIMIT 20",(grenze,)).fetchall(); c.close()
+    return [{'nr':r['nr'],'id':r['job_id'],'name':' '.join(x for x in (r['first_name'],r['customer']) if x),'wunschtag':r['wunschtag'],
+             'stva_date':r['stva_date'],'verschoben':(r['stva_date'] or '')!=(r['wunschtag'] or ''),'formular':bool(r['formular'])} for r in rows]
+
+def web_confirm_text(nr):
+    """Fertiger WhatsApp-Text zur Bestaetigung einer Online-Vormerkung (mit dem aktuellen StVA-Tag aus dem Auftrag)."""
+    c=db(); w=c.execute('SELECT * FROM web_imports WHERE nr=?',(nr,)).fetchone()
+    j=c.execute('SELECT * FROM jobs WHERE id=?',(w['job_id'],)).fetchone() if w else None; c.close()
+    if not w or not j: raise RuntimeError('Vormerkung nicht gefunden.')
+    tag=j['stva_date'] or ''
+    if not tag: raise RuntimeError('Der Auftrag hat keinen StVA-Tag mehr.')
+    d=datetime.strptime(tag,'%Y-%m-%d').date()
+    bring=d-timedelta(days=1)
+    while not is_workday(bring): bring-=timedelta(days=1)
+    bis=BUERO_ZEITEN.get(bring.weekday(),('',''))[1]
+    zurueck=next_workday(tag); name=' '.join(x for x in (j['first_name'],j['customer']) if x)
+    t=[f'Guten Tag {name},'.replace(' ,',','),'',f'vielen Dank für Ihre Online-Vormerkung {nr} beim Zulassungsservice Grevenbroich.','']
+    if tag!=(w['wunschtag'] or tag):
+        t+=[f'Leider war Ihr Wunschtag {_tag_lang(w["wunschtag"])} inzwischen ausgebucht. Wir haben Sie deshalb für {_tag_lang(tag)} eingeplant – passt Ihnen das? Bitte geben Sie uns kurz Bescheid.','']
+    else:
+        t+=[f'Ihr Zulassungstag: {_tag_lang(tag)}','']
+    t+=[f'Bitte bringen Sie Ihre Unterlagen bis spätestens {_tag_lang(bring.isoformat())}, {bis} Uhr vorbei.',
+        f'Ihre Papiere und Schilder können Sie ab {_tag_lang(zurueck)} abholen – wir melden uns, sobald alles fertig ist.','',
+        'Adresse: Uhlhornstr. 5, 41515 Grevenbroich (3 Kundenparkplätze direkt vor der Tür)',
+        'Öffnungszeiten: Mo + Mi 07:30–16:30, Di + Do 07:30–15:30, Fr 07:30–13:00','','Mit freundlichen Grüßen','Zulassungsservice Grevenbroich']
+    return {'nr':nr,'mobile':j['mobile'] or '','text':'\n'.join(t)}
+
+def web_mark_confirmed(nr,skip=False):
+    now=datetime.now().isoformat(timespec='seconds')
+    c=db(); w=c.execute('SELECT job_id FROM web_imports WHERE nr=?',(nr,)).fetchone()
+    if not w: c.close(); raise RuntimeError('Vormerkung nicht gefunden.')
+    c.execute('UPDATE web_imports SET bestaetigt=? WHERE nr=?',('übersprungen '+now if skip else now,nr))
+    if not skip:
+        j=c.execute('SELECT missing FROM jobs WHERE id=?',(w['job_id'],)).fetchone()
+        if j: c.execute('UPDATE jobs SET missing=? WHERE id=?',(((j['missing'] or '')+f"\nBestätigung per WhatsApp: {datetime.now().strftime('%d.%m.%Y %H:%M')}").strip(),w['job_id']))
+    c.commit(); c.close(); return {'ok':True}
+
+def web_sync_status():
+    s=get_app_settings()
+    return {'eingerichtet':bool(s.get('web_url') and s.get('web_token')),**WEB_STATUS,'unbestaetigt':web_unbestaetigt(),
+            'formular_verschluesselung':bool(_web_key())}
+
 class H(BaseHTTPRequestHandler):
     def sendj(self,obj,code=200):
         b=json.dumps(obj,ensure_ascii=False).encode(); self.send_response(code); self.send_header('Content-Type','application/json; charset=utf-8'); self.send_header('Content-Length',len(b)); self.end_headers(); self.wfile.write(b)
@@ -1605,6 +2023,8 @@ class H(BaseHTTPRequestHandler):
                 self.send_response(200); self.send_header('Content-Type','image/jpeg'); self.send_header('Cache-Control','no-store'); self.send_header('Content-Length',len(b)); self.end_headers(); self.wfile.write(b)
             elif u.path=='/api/calibration': self.sendj(get_scanner_calibration())
             elif u.path=='/api/app-settings': self.sendj(get_app_settings())
+            elif u.path=='/api/web-sync-status': self.sendj(web_sync_status())
+            elif u.path=='/api/web-confirm': self.sendj(web_confirm_text(urllib.parse.parse_qs(u.query).get('nr',[''])[0]))
             elif u.path=='/api/backups': self.sendj(list_backups())
             elif u.path=='/api/document-backup-status': self.sendj({'latest':latest_document_backup()})
             elif u.path=='/api/update-check': self.sendj(find_update())
@@ -1705,21 +2125,31 @@ class H(BaseHTTPRequestHandler):
             elif self.path=='/api/lauf-options':
                 jid=int(d.get('id',0)); save_lauf_options(jid,d.get('data') or {}); self.sendj({'ok':True})
             elif self.path=='/api/save':
+                if _plant_tag(d): web_sync_before_booking()
                 jid,actual=save_job(d); attach_pending_scans(jid,d.get('customer',''),d.get('first_name','')); self.sendj({'id':jid,'stva_date':actual})
             elif self.path=='/api/fill-buffers': self.sendj(fill_buffers(d.get('date') or datetime.now().date().isoformat()))
-            elif self.path=='/api/move': self.sendj({'ok':True,'stva_date':move_job(int(d.get('id',0)),d.get('date',''))})
+            elif self.path=='/api/move': web_sync_before_booking(); self.sendj({'ok':True,'stva_date':move_job(int(d.get('id',0)),d.get('date',''))})
             elif self.path=='/api/job-delete': self.sendj({'ok':bool(delete_job(int(d.get('id',0))))})
             elif self.path=='/api/remove-today':
                 jid=int(d.get('id',0)); changed=remove_from_today(jid)
                 if not changed: self.sendj({'error':'Auftrag nicht gefunden'},404)
                 else: self.sendj({'ok':True})
+            elif self.path=='/api/web-sync-now':
+                neu=web_sync_once(); self.sendj({**web_sync_status(),'jetzt_neu':neu})
+            elif self.path=='/api/web-sync-seen':
+                WEB_STATUS['neu']=[]; self.sendj({'ok':True})
+            elif self.path=='/api/web-confirmed':
+                self.sendj(web_mark_confirmed(str(d.get('nr','')),bool(d.get('skip'))))
             else: self.send_error(404)
+            # Tagesplanung geaendert -> freie Plaetze sofort an die Website melden
+            if self.path in ('/api/save','/api/move','/api/job-delete','/api/job-restore','/api/fill-buffers','/api/remove-today','/api/app-settings','/api/backup-restore'): WEB_WAKE.set()
         except Exception as e:self.sendj({'error':str(e)},500)
     def log_message(self,*a): pass
 
 def main():
     db().close(); backup_db_daily()
     srv=ThreadingHTTPServer((HOST,PORT),H); threading.Timer(.7,lambda:webbrowser.open(f'http://{HOST}:{PORT}')).start(); print('Zulassungsassistent läuft. Dieses Fenster offen lassen.'); print(f'http://{HOST}:{PORT}');
+    threading.Thread(target=web_sync_loop,daemon=True).start(); WEB_WAKE.set()
     try:srv.serve_forever()
     except KeyboardInterrupt:pass
 if __name__=='__main__':main()
